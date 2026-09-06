@@ -1,4 +1,4 @@
-# @dsh-web-search-serper
+# @dingpenghui/dsh-web-search-serper
 
 [English](README.md) | 中文
 

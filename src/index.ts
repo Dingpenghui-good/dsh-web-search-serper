@@ -6,7 +6,7 @@
  * 注册为 `serper` 搜索提供方，当它是唯一可用的搜索后端时，
  * `ctx.web.search()` 会自动解析到它——也可以用 `searchProvider: serper` 固定。
  *
- * @module @dsh-web-search-serper
+ * @module @dingpenghui/dsh-web-search-serper
  */
 
 import type { Context } from '@deepseek-ai/cordis'
