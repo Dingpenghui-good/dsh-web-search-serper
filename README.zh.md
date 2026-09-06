@@ -2,9 +2,13 @@
 
 [English](README.md) | 中文
 
+[![npm version](https://img.shields.io/npm/v/@dingpenghui/dsh-web-search-serper.svg)](https://www.npmjs.com/package/@dingpenghui/dsh-web-search-serper)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![DeepSeek Harness](https://img.shields.io/badge/DSH-Compatible-blue.svg)](https://github.com/deepseek-ai/deepseek-harness)
+
 ## 概述
 
-`@dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，专为 DeepSeek Harness (DSH) 的 web 能力 seam (`ctx.web`) 设计。
+`@dingpenghui/dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，专为 DeepSeek Harness (DSH) 的 web 能力 seam (`ctx.web`) 设计。
 
 Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 Google 搜索结果 API。免费额度：**每月 2,500 次查询**，无需信用卡。
 
@@ -24,9 +28,9 @@ Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 
 ### 安装
 
 ```bash
-pnpm add @dsh-web-search-serper
+pnpm add @dingpenghui/dsh-web-search-serper
 # 或
-npm install @dsh-web-search-serper
+npm install @dingpenghui/dsh-web-search-serper
 ```
 
 ### 配置
@@ -40,7 +44,7 @@ npm install @dsh-web-search-serper
 
 - insert:
     - id: web-search-serper
-      name: '@dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
       config:
         apiKey: your-serper-api-key
         gl: cn  # 可选：设置默认国家代码
@@ -50,7 +54,7 @@ npm install @dsh-web-search-serper
 
 ```yaml
 - id: web-search-serper
-  name: '@dsh-web-search-serper'
+  name: '@dingpenghui/dsh-web-search-serper'
   config:
     apiKey: !!js process.env.SERPER_API_KEY
 ```
@@ -87,7 +91,7 @@ export SERPER_API_KEY=your-api-key-here
 ### 基础搜索
 
 ```typescript
-import { apply } from '@dsh-web-search-serper'
+import { apply } from '@dingpenghui/dsh-web-search-serper'
 
 // 在 Cordis 插件中使用
 apply(ctx, {

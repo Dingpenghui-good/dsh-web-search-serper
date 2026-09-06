@@ -1,10 +1,14 @@
 # @dingpenghui/dsh-web-search-serper
 
-English | [中文](README.zh.md)
+[English](README.md) | [中文](README.zh.md)
+
+[![npm version](https://img.shields.io/npm/v/@dingpenghui/dsh-web-search-serper.svg)](https://www.npmjs.com/package/@dingpenghui/dsh-web-search-serper)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![DeepSeek Harness](https://img.shields.io/badge/DSH-Compatible-blue.svg)](https://github.com/deepseek-ai/deepseek-harness)
 
 ## Overview
 
-`@dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, designed for the DeepSeek Harness (DSH) web capability seam (`ctx.web`).
+`@dingpenghui/dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, designed for the DeepSeek Harness (DSH) web capability seam (`ctx.web`).
 
 Serper.dev is an official Google Search partner providing fast, structured Google search results API. Free tier: **2,500 queries per month**, no credit card required.
 
@@ -24,9 +28,9 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 ### Install
 
 ```bash
-pnpm add @dsh-web-search-serper
+pnpm add @dingpenghui/dsh-web-search-serper
 # or
-npm install @dsh-web-search-serper
+npm install @dingpenghui/dsh-web-search-serper
 ```
 
 ### Configure
@@ -40,7 +44,7 @@ Add to your DSH `cordis.patch.yml`:
 
 - insert:
     - id: web-search-serper
-      name: '@dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
       config:
         apiKey: your-serper-api-key
         gl: cn  # Optional: set default country code
@@ -50,7 +54,7 @@ Or via environment variable:
 
 ```yaml
 - id: web-search-serper
-  name: '@dsh-web-search-serper'
+  name: '@dingpenghui/dsh-web-search-serper'
   config:
     apiKey: !!js process.env.SERPER_API_KEY
 ```
@@ -87,7 +91,7 @@ export SERPER_API_KEY=your-api-key-here
 ### Basic Search
 
 ```typescript
-import { apply } from '@dsh-web-search-serper'
+import { apply } from '@dingpenghui/dsh-web-search-serper'
 
 // Use in a Cordis plugin
 apply(ctx, {
