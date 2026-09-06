@@ -1,6 +1,6 @@
 {
   "name": "@dingpenghui/dsh-web-search-serper",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam",
   "keywords": [
     "deepseek",
