@@ -8,6 +8,6 @@ export default defineConfig({
   platform: 'node',
   target: 'es2024',
   fixedExtension: false,
-  dts: false,
-  clean: false,
+  dts: true,
+  clean: true,
 })

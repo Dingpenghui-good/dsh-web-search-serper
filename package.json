@@ -1,6 +1,6 @@
 {
   "name": "@dingpenghui/dsh-web-search-serper",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam",
   "keywords": [
     "deepseek",
@@ -39,17 +39,20 @@
   "license": "MIT",
   "scripts": {
     "build": "tsdown",
-    "build:types": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json",
     "dev": "tsdown --watch",
     "test": "vitest run",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "pnpm run typecheck && pnpm run build"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-web": "^0.1.5-alpha.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-web": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-web": "^0.1.5-alpha.2",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
     "tsdown": "^0.22.0",

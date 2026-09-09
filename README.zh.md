@@ -35,7 +35,7 @@ npm install @dingpenghui/dsh-web-search-serper
 
 ### 配置
 
-在 DSH 的 `cordis.patch.yml` 中添加：
+在 DSH 的 `cordis.patch.yml`（profile 补丁层）中添加：
 
 ```yaml
 - id: web
@@ -45,24 +45,24 @@ npm install @dingpenghui/dsh-web-search-serper
 - insert:
     - id: web-search-serper
       name: '@dingpenghui/dsh-web-search-serper'
+```
+
+无需 `config` 即可工作：API key 按以下顺序在每次搜索时解析：
+
+1. 行 `config.apiKey`（显式配置，需给行加 `config` 块）；
+2. DSH 宿主进程的环境变量 `SERPER_API_KEY`；
+3. DSH 凭证库中的 `SERPER_API_KEY` 引用
+   （`$DSH_HOME/.credentials.yaml` 的 `refs:` —— 热加载，改动无需重启）。
+
+也可以在 composition 中固定 key：
+
+```yaml
+- insert:
+    - id: web-search-serper
+      name: '@dingpenghui/dsh-web-search-serper'
       config:
         apiKey: your-serper-api-key
         gl: cn  # 可选：设置默认国家代码
-```
-
-或者通过环境变量：
-
-```yaml
-- id: web-search-serper
-  name: '@dingpenghui/dsh-web-search-serper'
-  config:
-    apiKey: !!js process.env.SERPER_API_KEY
-```
-
-然后设置环境变量：
-
-```bash
-export SERPER_API_KEY=your-api-key-here
 ```
 
 ### 获取 API Key
@@ -78,11 +78,11 @@ export SERPER_API_KEY=your-api-key-here
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `apiKey` | string | 否 | `$SERPER_API_KEY` | Serper API 密钥 |
+| `apiKey` | string | 否 | `$SERPER_API_KEY`，再回退到凭证引用 `SERPER_API_KEY` | Serper API 密钥 |
 | `baseURL` | string | 否 | `https://google.serper.dev` | API 端点基址 |
 | `gl` | string | 否 | - | 国家代码（如 `us`, `cn`, `jp`） |
-| `cr` | string | 否 | - | 地区代码（如 `cr=us`） |
-| `numResults` | number | 否 | 10 | 默认结果数量 |
+| `cr` | string | 否 | - | 地区代码（如 `us`，作为 `cr` 参数发送） |
+| `numResults` | number | 否 | 省略（Serper 默认 10） | 默认结果数量，上限 100 |
 
 ---
 

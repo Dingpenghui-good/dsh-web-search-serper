@@ -35,7 +35,7 @@ npm install @dingpenghui/dsh-web-search-serper
 
 ### Configure
 
-Add to your DSH `cordis.patch.yml`:
+Add to your DSH `cordis.patch.yml` (profile patch layer):
 
 ```yaml
 - id: web
@@ -45,24 +45,24 @@ Add to your DSH `cordis.patch.yml`:
 - insert:
     - id: web-search-serper
       name: '@dingpenghui/dsh-web-search-serper'
+```
+
+No `config` is required: the API key is resolved per search in this order:
+
+1. row `config.apiKey` (explicit, when you add a `config` block to the row);
+2. the `SERPER_API_KEY` environment variable of the DSH host process;
+3. a `SERPER_API_KEY` reference in the DSH credential store
+   (`$DSH_HOME/.credentials.yaml` `refs:` — hot-reloaded, no restart on change).
+
+To pin the key in the composition instead, add a row config block:
+
+```yaml
+- insert:
+    - id: web-search-serper
+      name: '@dingpenghui/dsh-web-search-serper'
       config:
         apiKey: your-serper-api-key
         gl: cn  # Optional: set default country code
-```
-
-Or via environment variable:
-
-```yaml
-- id: web-search-serper
-  name: '@dingpenghui/dsh-web-search-serper'
-  config:
-    apiKey: !!js process.env.SERPER_API_KEY
-```
-
-Then set the environment variable:
-
-```bash
-export SERPER_API_KEY=your-api-key-here
 ```
 
 ### Get API Key
@@ -78,11 +78,11 @@ export SERPER_API_KEY=your-api-key-here
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `apiKey` | string | No | `$SERPER_API_KEY` | Serper API key |
+| `apiKey` | string | No | `$SERPER_API_KEY`, then credential reference `SERPER_API_KEY` | Serper API key |
 | `baseURL` | string | No | `https://google.serper.dev` | API endpoint base |
 | `gl` | string | No | - | Country code (e.g., `us`, `cn`, `jp`) |
-| `cr` | string | No | - | Region code (e.g., `cr=us`) |
-| `numResults` | number | No | 10 | Default result count |
+| `cr` | string | No | - | Region code (e.g., `us`; sent as the `cr` parameter) |
+| `numResults` | number | No | omitted (Serper defaults to 10) | Default result count, capped at 100 |
 
 ---
 
