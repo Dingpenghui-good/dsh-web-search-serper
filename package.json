@@ -21,6 +21,7 @@
     "src",
     "smoke-test.mjs",
     "cordis.patch.yml",
+    "RELEASE_NOTES_v1.0.0.md",
     "README.md",
     "README.zh.md",
     "LICENSE"
