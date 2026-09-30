@@ -1,14 +1,13 @@
-# @dingpenghui/dsh-web-search-serper
+# dsh-web-search-serper
 
 [English](README.md) | [中文](README.zh.md)
 
-[![npm version](https://img.shields.io/npm/v/@dingpenghui/dsh-web-search-serper.svg)](https://www.npmjs.com/package/@dingpenghui/dsh-web-search-serper)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DeepSeek Harness](https://img.shields.io/badge/DSH-Compatible-blue.svg)](https://github.com/deepseek-ai/deepseek-harness)
 
 ## Overview
 
-`@dingpenghui/dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, designed for the DeepSeek Harness (DSH) web capability seam (`ctx.web`).
+`@dingpenghui/dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, for the current DeepSeek Harness (DSH) web capability seam (`ctx.web`, `@deepseek-ai/dsh-web` `0.2.0-rc.x`).
 
 Serper.dev is an official Google Search partner providing fast, structured Google search results API. Free tier: **2,500 queries per month**, no credit card required.
 
@@ -19,7 +18,7 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 - 🔒 **Privacy Friendly** — No user tracking, no cookie collection
 - 💰 **Generous Free Tier** — 2,500 monthly queries at no cost
 - 🌍 **Multi-language Support** — Results from countries/regions worldwide
-- 🔧 **Zero-config Integration** — One line to connect with DSH
+- 🔧 **One-line Insert** — a single row in your profile `cordis.patch.yml`; key resolved lazily per search (config → env → credential store), no restart on change
 
 ---
 
@@ -28,9 +27,13 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 ### Install
 
 ```bash
-pnpm add @dingpenghui/dsh-web-search-serper
-# or
-npm install @dingpenghui/dsh-web-search-serper
+# 作为 profile bundle 装入（推荐）：
+# 1. 在 profile 的 package.json `dependencies` 加：
+#    "dsh-web-search-serper": "link:<本目录绝对路径>"
+# 2. 同步 `dsh.profile.bundles` 加 "dsh-web-search-serper"
+#    与 cordis.patch.yml 加 insert 行（或直接复制本包自带 cordis.patch.yml 的内容）
+pnpm install
+pnpm run build
 ```
 
 ### Configure
@@ -38,28 +41,24 @@ npm install @dingpenghui/dsh-web-search-serper
 Add to your DSH `cordis.patch.yml` (profile patch layer):
 
 ```yaml
-- id: web
-  config:
-    searchProvider: serper
-
 - insert:
     - id: web-search-serper
-      name: '@dingpenghui/dsh-web-search-serper'
+      name: 'dsh-web-search-serper'
 ```
 
-No `config` is required: the API key is resolved per search in this order:
+No `config` is required: the API key is resolved lazily per search in this order:
 
-1. row `config.apiKey` (explicit, when you add a `config` block to the row);
+1. row `config.apiKey` (explicit, when you add a `config` block to the row — editable on the plugin detail page, hot-applied after save);
 2. the `SERPER_API_KEY` environment variable of the DSH host process;
 3. a `SERPER_API_KEY` reference in the DSH credential store
-   (`$DSH_HOME/.credentials.yaml` `refs:` — hot-reloaded, no restart on change).
+   (`$DSH_HOME/.credentials.yaml` `refs:` — resolved per search, no restart on change).
 
-To pin the key in the composition instead, add a row config block:
+To pin the key and options in the composition instead:
 
 ```yaml
 - insert:
     - id: web-search-serper
-      name: '@dingpenghui/dsh-web-search-serper'
+      name: 'dsh-web-search-serper'
       config:
         apiKey: your-serper-api-key
         gl: cn  # Optional: set default country code
@@ -78,7 +77,7 @@ To pin the key in the composition instead, add a row config block:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `apiKey` | string | No | `$SERPER_API_KEY`, then credential reference `SERPER_API_KEY` | Serper API key |
+| `apiKey` | string | No | `$SERPER_API_KEY`, then credential reference `SERPER_API_KEY` | Serper API key (secret, volatile) |
 | `baseURL` | string | No | `https://google.serper.dev` | API endpoint base |
 | `gl` | string | No | - | Country code (e.g., `us`, `cn`, `jp`) |
 | `cr` | string | No | - | Region code (e.g., `us`; sent as the `cr` parameter) |
@@ -91,13 +90,11 @@ To pin the key in the composition instead, add a row config block:
 ### Basic Search
 
 ```typescript
-import { apply } from '@dingpenghui/dsh-web-search-serper'
+import { apply } from 'dsh-web-search-serper'
 
-// Use in a Cordis plugin
-apply(ctx, {
-  apiKey: 'your-api-key',
-  gl: 'cn',
-})
+// Used by the Cordis loader; no direct calls needed in most deployments.
+// In a Cordis plugin:
+// apply(ctx)
 ```
 
 ### Search via ctx.web
@@ -122,9 +119,9 @@ console.log(result.sources)
 | Error Code | Meaning | Resolution |
 |------------|---------|------------|
 | `WEB_PROVIDER_CONFIGURED_MISSING` | Configured provider not registered | Check if plugin is loaded correctly |
-| `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` | Provider registered but unavailable | Check if API Key is valid |
+| `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` | Provider registered but no key available | Check API key: config / `$SERPER_API_KEY` / credential reference |
 | `WEB_ABORTED` | Request was aborted | Check AbortSignal |
-| `WEB_PROVIDER_ERROR` | API request failed | Check network/API Key/rate limits |
+| `WEB_PROVIDER_ERROR` | API request failed | Check network / API key / rate limits |
 
 ---
 
@@ -133,7 +130,7 @@ console.log(result.sources)
 1. **Free tier limit** — 2,500 monthly queries, paid plans for higher usage
 2. **Google Search only** — Does not support Bing, Baidu, or other search engines
 3. **No generated answers** — Returns search results only, no AI-generated summaries
-4. **API Key required** — Must provide a valid Serper API Key in configuration
+4. **API Key required** — Must provide a valid Serper API Key via config, environment, or credential reference
 
 ---
 
@@ -141,31 +138,9 @@ console.log(result.sources)
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — DSH main project
 - [Serper.dev](https://serper.dev) — Google Search API service
-- [@dsh-web-search-exa](https://www.npmjs.com/package/@dsh-web-search-exa) — Exa search provider
-- [@dsh-web-search-perplexity](https://www.npmjs.com/package/@dsh-web-search-perplexity) — Perplexity search provider
 
 ---
 
 ## License
 
 MIT License — See [LICENSE](LICENSE) file
-
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## Support
-
-For issues and questions:
-- Submit a [GitHub Issue](https://github.com/dingpenghui-good/dsh-web-search-serper/issues)
-- Check the [Documentation](https://github.com/dingpenghui-good/dsh-web-search-serper#readme)

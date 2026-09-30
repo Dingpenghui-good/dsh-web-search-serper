@@ -1,0 +1,24 @@
+# dsh-web-search-serper bundle patch — 安装后经 profile 加载自动生效
+#
+# 用法：把本目录作为 bundle 装入某个 dsh profile
+#   （profile 的 package.json `dependencies` 加
+#     "dsh-web-search-serper": "link:<本目录绝对路径>"，
+#     并同步 package.json `dsh.profile.bundles` 与 cordis.patch.yml
+#     的 insert 行），或直接复制本文件内容到 profile 的
+#     cordis.patch.yml：
+#
+#   - insert:
+#       - id: web-search-serper
+#         name: 'dsh-web-search-serper'
+#         config:
+#           gl: cn
+#
+# 行 id 即配置命名空间：`web-search-serper`。config 全部可选，
+# 缺省时 API key 按以下顺序解析：
+#   1. config.apiKey（显式配置）
+#   2. 宿主进程环境变量 $SERPER_API_KEY
+#   3. 凭证库引用 SERPER_API_KEY（credentials 服务，热解析）
+
+- insert:
+    - id: web-search-serper
+      name: 'dsh-web-search-serper'

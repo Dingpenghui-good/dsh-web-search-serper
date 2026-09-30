@@ -1,13 +1,15 @@
 /**
- * Serper.dev-backed `WebSearchProvider`. It maps organic Google results to
- * normalized sources and registers into the `ctx.web` seam without owning
- * the service.
+ * Serper.dev-backed `WebSearchProvider`。把 Google organic 结果映射为归一化
+ * sources，注册到 `ctx.web` seam，不拥有该服务。
  *
- * Serper's `organic[].date` is human text ("Aug 14, 2026", "2 days ago"),
- * not ISO-8601, so it is deliberately not mapped to `publishedAt`, which the
- * seam documents as an ISO-8601 timestamp.
+ * Serper 的 `organic[].date` 是人类可读文本（"Aug 14, 2026"、"2 days ago"），
+ * 不是 ISO-8601，因此刻意不映射到 `publishedAt`（seam 文档定义为 ISO 时间戳）。
  *
- * @module @dingpenghui/dsh-web-search-serper/provider
+ * 0.2.0-rc.2 适配：所有配置值（key / baseURL / gl / cr / numResults）通过
+ * 惰性访问器读取，每次搜索时求值——宿主保存 settings 后不重激活插件 fiber，
+ * 惰性读取让后续请求立即使用新值。
+ *
+ * @module dsh-web-search-serper/provider
  */
 
 import { WebError } from '@deepseek-ai/dsh-web'
@@ -26,28 +28,31 @@ export const SERPER_PROVIDER_ID = 'serper'
 export const SERPER_DEFAULT_BASE_URL = 'https://google.serper.dev'
 
 /** 归因头；随包版本更新 */
-const USER_AGENT = 'dsh-web-search-serper/0.3.1'
+const USER_AGENT = 'dsh-web-search-serper/1.0.0'
 
 /** Serper 的 num 上限 */
 const SERPER_MAX_RESULTS = 100
 
-/** Resolved provider options (the plugin's `apply` supplies config and env-var defaults). */
+/** 单次请求的惰性解析出的端点选项（key 由 search() 单独解析） */
+interface RequestOptions {
+  baseURL: string
+  gl?: string
+  cr?: string
+  numResults?: number
+}
+
+/** Resolved provider options. */
 export interface SerperSearchProviderOptions {
-  /** Serper API key. Empty/absent makes the provider unavailable unless `resolveKey` is set. */
-  apiKey: string
   /**
-   * Per-call key resolver (credentials store). Consulted only when the
-   * static `apiKey` is empty; resolves to a key value or `undefined`.
+   * Per-call key resolver（config → 环境变量 → 凭证库的惰性链）。
+   * 返回 key 值或 `undefined`（provider 判为不可用）。
    */
   resolveKey?: () => Promise<string | undefined>
-  /** 端点基址，`/search` 会自动追加 */
-  baseURL: string
-  /** 默认国家代码，如 'us', 'cn' */
-  gl?: string
-  /** 默认地区代码，如 'us'（发送为 `cr` 参数） */
-  cr?: string
-  /** 默认结果数量（当请求未携带 `maxResults` 时） */
-  numResults?: number
+  /**
+   * 端点选项惰性访问器：每次搜索时求值 baseURL / gl / cr / numResults。
+   * 缺省时 baseURL 用默认端点，无地区与数量默认。
+   */
+  baseURLOptions?: () => RequestOptions
 }
 
 /**
@@ -76,35 +81,32 @@ export function mapSerperResponse(response: SerperSearchResponse): WebSearchResu
   return { sources, truncated: false }
 }
 
-/** Serper.dev 搜索提供方实现；HTTP 重定向失败为 `WEB_PROVIDER_ERROR` */
+/** Serper.dev 搜索提供方实现；HTTP 重定向失败为 `WEB_PROVIDER_ERROR`。 */
 export class SerperSearchProvider implements WebSearchProvider {
   readonly id = SERPER_PROVIDER_ID
 
   constructor(private readonly options: SerperSearchProviderOptions) {}
 
-  /** 检查提供方是否可用（廉价判断，不发网络请求） */
+  /**
+   * 检查提供方是否可用（廉价判断，不发网络请求）。
+   * 0.2.0-rc.2 的选择语义：配置了 serper 但 key 缺失 → UNAVAILABLE 而非
+   * 执行时报错，因此这里做一次廉价的 key 预检（只读 config/环境变量，
+   * 凭证库引用存在性由首次搜索兜底）。
+   */
   available(): boolean {
-    return isValidBaseUrl(this.options.baseURL)
-      && (this.options.apiKey.length > 0 || this.options.resolveKey !== undefined)
+    const opts = this.options.baseURLOptions?.() ?? { baseURL: SERPER_DEFAULT_BASE_URL }
+    if (!isValidBaseUrl(opts.baseURL)) return false
+    // 有惰性 resolver 即可用（真正缺 key 时 search() 抛 WEB_PROVIDER_CONFIGURED_UNAVAILABLE）
+    const envKey = process.env.SERPER_API_KEY
+    return this.options.resolveKey !== undefined || (envKey !== undefined && envKey.length > 0)
   }
 
   /**
    * 执行搜索请求。
    */
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
-    let key = this.options.apiKey
-    if (key.length === 0 && this.options.resolveKey !== undefined) {
-      try {
-        key = (await this.options.resolveKey()) ?? ''
-      } catch (error: unknown) {
-        throw new WebError(
-          `Serper search: credential lookup failed: ${String(error)}`,
-          'WEB_PROVIDER_ERROR',
-          { cause: error },
-        )
-      }
-    }
-    if (key.length === 0) {
+    const key = await this.options.resolveKey?.()
+    if (key === undefined || key.length === 0) {
       throw new WebError(
         'Serper search provider is configured but no API key is available — set config.apiKey, '
         + 'the SERPER_API_KEY environment variable, or a SERPER_API_KEY credential reference',
@@ -112,14 +114,15 @@ export class SerperSearchProvider implements WebSearchProvider {
       )
     }
 
-    const requested = request.maxResults ?? this.options.numResults
+    const opts = this.options.baseURLOptions?.() ?? { baseURL: SERPER_DEFAULT_BASE_URL }
+    const requested = request.maxResults ?? opts.numResults
     const num = requested === undefined
       ? undefined
       : Math.min(Math.max(1, Math.floor(requested)), SERPER_MAX_RESULTS)
 
     let response: Response
     try {
-      response = await fetch(`${this.options.baseURL}/search`, {
+      response = await fetch(`${opts.baseURL}/search`, {
         method: 'POST',
         redirect: 'error',
         headers: {
@@ -130,8 +133,8 @@ export class SerperSearchProvider implements WebSearchProvider {
         },
         body: JSON.stringify({
           q: request.query,
-          ...(this.options.gl !== undefined ? { gl: this.options.gl } : {}),
-          ...(this.options.cr !== undefined ? { cr: this.options.cr } : {}),
+          ...(opts.gl !== undefined ? { gl: opts.gl } : {}),
+          ...(opts.cr !== undefined ? { cr: opts.cr } : {}),
           ...(num !== undefined ? { num: num } : {}),
         }),
         ...(signal !== undefined ? { signal } : {}),
@@ -191,7 +194,12 @@ export class SerperSearchProvider implements WebSearchProvider {
 
 /** 检查 base URL 是否合法 */
 function isValidBaseUrl(baseURL: string): boolean {
-  return URL.canParse(baseURL)
+  try {
+    new URL(baseURL)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** 检查是否为中止错误（Node fetch 抛 DOMException AbortError） */
