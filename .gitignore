@@ -19,6 +19,9 @@ dist/
 .env.test.local
 .env.production.local
 
+# npm 凭据：.npmrc 含 registry token，绝不提交
+.npmrc
+
 # logs
 *.log
 npm-debug.log*
