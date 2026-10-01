@@ -8,7 +8,7 @@
 export const SERPER_SEARCH_NAMESPACE = 'web-search-serper'
 
 /** npm 包名：`plugins.bundle.config` slot 的 key。 */
-export const PLUGIN_PACKAGE_NAME = 'dsh-web-search-serper'
+export const PLUGIN_PACKAGE_NAME = '@dingpenghui/dsh-web-search-serper'
 
 /** `plugins.row.config` slot 的 key：`<package>#<row id>`。 */
 export const PLUGIN_ROW_CONFIG_KEY = `${PLUGIN_PACKAGE_NAME}#${SERPER_SEARCH_NAMESPACE}`

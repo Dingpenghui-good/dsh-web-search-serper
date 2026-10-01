@@ -27,11 +27,15 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 ### Install
 
 ```bash
-# 作为 profile bundle 装入（推荐）：
-# 1. 在 profile 的 package.json `dependencies` 加：
-#    "dsh-web-search-serper": "link:<本目录绝对路径>"
-# 2. 同步 `dsh.profile.bundles` 加 "dsh-web-search-serper"
-#    与 cordis.patch.yml 加 insert 行（或直接复制本包自带 cordis.patch.yml 的内容）
+# Option 1 — install from npm (recommended)
+dsh plugin --profile web add @dingpenghui/dsh-web-search-serper
+
+# Option 2 — local bundle via link:
+# 1. Add to the profile's package.json `dependencies`:
+#    "@dingpenghui/dsh-web-search-serper": "link:<absolute path to this dir>"
+# 2. Add "@dingpenghui/dsh-web-search-serper" to `dsh.profile.bundles`,
+#    and add the insert row to cordis.patch.yml (or copy this package's
+#    own cordis.patch.yml content)
 pnpm install
 pnpm run build
 ```
@@ -43,7 +47,7 @@ Add to your DSH `cordis.patch.yml` (profile patch layer):
 ```yaml
 - insert:
     - id: web-search-serper
-      name: 'dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
 ```
 
 No `config` is required: the API key is resolved lazily per search in this order:
@@ -58,7 +62,7 @@ To pin the key and options in the composition instead:
 ```yaml
 - insert:
     - id: web-search-serper
-      name: 'dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
       config:
         apiKey: your-serper-api-key
         gl: cn  # Optional: set default country code
@@ -90,7 +94,7 @@ To pin the key and options in the composition instead:
 ### Basic Search
 
 ```typescript
-import { apply } from 'dsh-web-search-serper'
+import { apply } from '@dingpenghui/dsh-web-search-serper'
 
 // Used by the Cordis loader; no direct calls needed in most deployments.
 // In a Cordis plugin:

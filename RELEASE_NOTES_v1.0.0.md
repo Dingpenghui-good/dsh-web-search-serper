@@ -6,7 +6,7 @@
 
 1. **迁移到当前版本插件模型（0.2.0-rc.2）**
    - 依赖升级：`@deepseek-ai/dsh-web` → `0.2.0-rc.2`、`@deepseek-ai/cordis` → `^4.0.4`、新增 `@deepseek-ai/schemastery`（Config schema 支持）
-   - 包名改为无 scope 的 `dsh-web-search-serper`（本地 bundle 安装模式，与 dsh-obsidian-sync 一致）
+   - 包名保持 scoped 的 `@dingpenghui/dsh-web-search-serper`：无 scope 的 `dsh-web-search-serper` 已被其他作者（risyasin）占用，无法发布
    - 新增 `dsh.bundle`（`cordis.patch.yml` 自动作为 bundle patch 应用）与 `dsh.client`（client 端装配）声明
 
 2. **惰性配置解析（保存后无需重启即生效）**
@@ -25,10 +25,13 @@
 ### 安装
 
 ```bash
-# 作为 profile bundle（推荐）
+# 方式一：从 npm 安装（推荐）
+dsh plugin --profile web add @dingpenghui/dsh-web-search-serper
+
+# 方式二：本地 bundle（link:）
 # 1. profile 的 package.json `dependencies` 加：
-#    "dsh-web-search-serper": "link:<本目录绝对路径>"
-# 2. 同步 `dsh.profile.bundles` 加 "dsh-web-search-serper"
+#    "@dingpenghui/dsh-web-search-serper": "link:<本目录绝对路径>"
+# 2. 同步 `dsh.profile.bundles` 加 "@dingpenghui/dsh-web-search-serper"
 # 3. 重启 DSH 桌面端
 ```
 
@@ -37,14 +40,14 @@
 ```yaml
 - insert:
     - id: web-search-serper
-      name: 'dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
 ```
 
 重启 DSH 后生效；如需固定使用 Serper 作为搜索后端，再把 `web` 的 `searchProvider` 设为 `serper`。
 
 ### 破坏性变更
 
-- 包名从 `@dingpenghui/dsh-web-search-serper` 改为 `dsh-web-search-serper`（0.1.x/0.3.x 的安装方式不再适用）
+- 包名维持 `@dingpenghui/dsh-web-search-serper`（无 scope 名被他人占用，无法发布）；0.3.x 的 npm 安装流程仍然适用，1.0.0 起同时支持本地 bundle（`link:`）安装
 - 仅支持 DSH 0.2.0-rc.x 运行时；旧版本宿主请继续使用 0.3.x 系列
 
 ---
@@ -55,7 +58,7 @@
 
 1. **Migrated to the current plugin model (0.2.0-rc.2)**
    - Dependencies: `@deepseek-ai/dsh-web` → `0.2.0-rc.2`, `@deepseek-ai/cordis` → `^4.0.4`, new `@deepseek-ai/schemastery` (Config schema support)
-   - Package renamed to unscoped `dsh-web-search-serper` (local bundle install model, same as dsh-obsidian-sync)
+   - Package keeps the scoped name `@dingpenghui/dsh-web-search-serper`: the unscoped `dsh-web-search-serper` is owned by another author (risyasin) and cannot be published
    - New `dsh.bundle` (`cordis.patch.yml` applied automatically as the bundle patch) and `dsh.client` (client-side assembly) declarations
 
 2. **Lazy config resolution (applies without restart after save)**
@@ -74,10 +77,13 @@
 ### Installation
 
 ```bash
-# As a profile bundle (recommended)
+# Option 1 — install from npm (recommended)
+dsh plugin --profile web add @dingpenghui/dsh-web-search-serper
+
+# Option 2 — local bundle via link:
 # 1. Add to the profile's package.json "dependencies":
-#    "dsh-web-search-serper": "link:<absolute path to this dir>"
-# 2. Add "dsh-web-search-serper" to "dsh.profile.bundles"
+#    "@dingpenghui/dsh-web-search-serper": "link:<absolute path to this dir>"
+# 2. Add "@dingpenghui/dsh-web-search-serper" to "dsh.profile.bundles"
 # 3. Restart the DSH desktop app
 ```
 
@@ -86,12 +92,12 @@ Or manually add to the profile's `cordis.patch.yml`:
 ```yaml
 - insert:
     - id: web-search-serper
-      name: 'dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
 ```
 
 Takes effect after restarting DSH; to pin Serper as the search backend, set the `web` service's `searchProvider` to `serper`.
 
 ### Breaking changes
 
-- Package renamed from `@dingpenghui/dsh-web-search-serper` to `dsh-web-search-serper` (0.1.x/0.3.x install flows no longer apply)
+- Package keeps the scoped name `@dingpenghui/dsh-web-search-serper` (the unscoped name is owned by another author and cannot be published); the 0.3.x npm install flow still applies, and 1.0.0 additionally supports local bundle (`link:`) installs
 - Requires the DSH 0.2.0-rc.x runtime; keep using the 0.3.x series on older hosts

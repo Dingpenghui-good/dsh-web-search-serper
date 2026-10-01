@@ -7,7 +7,7 @@
 
 ## 概述
 
-`dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，适配当前 DeepSeek Harness (DSH) 的 web 能力 seam（`ctx.web`，`@deepseek-ai/dsh-web` `0.2.0-rc.x`）。
+`@dingpenghui/dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，适配当前 DeepSeek Harness (DSH) 的 web 能力 seam（`ctx.web`，`@deepseek-ai/dsh-web` `0.2.0-rc.x`）。
 
 Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 Google 搜索结果 API。免费额度：**每月 2,500 次查询**，无需信用卡。
 
@@ -27,10 +27,13 @@ Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 
 ### 安装
 
 ```bash
-# 作为 profile bundle 装入（推荐）：
+# 方式一：从 npm 安装（推荐）
+dsh plugin --profile web add @dingpenghui/dsh-web-search-serper
+
+# 方式二：本地 bundle（link:）
 # 1. 在 profile 的 package.json `dependencies` 加：
-#    "dsh-web-search-serper": "link:<本目录绝对路径>"
-# 2. 同步 `dsh.profile.bundles` 加 "dsh-web-search-serper"
+#    "@dingpenghui/dsh-web-search-serper": "link:<本目录绝对路径>"
+# 2. 同步 `dsh.profile.bundles` 加 "@dingpenghui/dsh-web-search-serper"
 #    并让 pnpm 把本包自带的 cordis.patch.yml 作为 bundle patch 应用
 #    （也可以直接把 insert 行手动加到 profile 的 cordis.patch.yml）
 pnpm install
@@ -44,7 +47,7 @@ pnpm run build
 ```yaml
 - insert:
     - id: web-search-serper
-      name: 'dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
 ```
 
 无需 `config` 即可工作：API key 在每次搜索时按以下顺序惰性解析：
@@ -59,7 +62,7 @@ pnpm run build
 ```yaml
 - insert:
     - id: web-search-serper
-      name: 'dsh-web-search-serper'
+      name: '@dingpenghui/dsh-web-search-serper'
       config:
         apiKey: your-serper-api-key
         gl: cn  # 可选：设置默认国家代码
@@ -91,7 +94,7 @@ pnpm run build
 ### 基础搜索
 
 ```typescript
-import { apply } from 'dsh-web-search-serper'
+import { apply } from '@dingpenghui/dsh-web-search-serper'
 
 // 由 Cordis loader 调用；大多数部署无需直接调用。
 // apply(ctx)

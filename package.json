@@ -1,5 +1,5 @@
 {
-  "name": "dsh-web-search-serper",
+  "name": "@dingpenghui/dsh-web-search-serper",
   "version": "1.0.0",
   "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam (ctx.web) — one-line insert, key via config / env / credential store",
   "type": "module",
