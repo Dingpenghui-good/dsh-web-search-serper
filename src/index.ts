@@ -17,7 +17,8 @@ import z from '@deepseek-ai/schemastery'
 // 宿主 Service 由运行时组合；插件包声明为普通依赖会与宿主版本产生 peer 漂移，
 // 导致启动时整组插件卡在"等待服务"。dsh-web 仅在类型面被消费（WebError 通过
 // 运行时 import 注入，见 provider.ts），此处不产生额外运行时依赖。
-import { SerperSearchProvider, SERPER_DEFAULT_BASE_URL } from './provider.ts'
+import type { WebSearchProvider } from '@deepseek-ai/dsh-web'
+import { SerperSearchProvider, SERPER_DEFAULT_BASE_URL, SERPER_PROVIDER_ID } from './provider.ts'
 
 /** 导出 Provider 标识 / 默认端点 */
 export { SERPER_PROVIDER_ID } from './provider.ts'
@@ -119,9 +120,26 @@ export function apply(ctx: Context): void {
     }
   }
 
+  /** 降级目标：seam 注册表里除本插件外、第一个可用的搜索 provider
+   *  （通常是 dsh-base 自带的 `deepseek-official`）。web seam 自身不做回退，
+   *  因此这里直接读 seam 的注册表，在插件内完成降级。
+   *  不硬编码 id：部署方换用其它搜索后端时同样能兜底。 */
+  const resolveFallback = (): WebSearchProvider | undefined => {
+    const registry = (ctx.get('web') as
+      | { searchProviders?: Map<string, WebSearchProvider> }
+      | undefined)?.searchProviders
+    if (registry === undefined) return undefined
+    for (const [id, candidate] of registry) {
+      if (id === SERPER_PROVIDER_ID) continue
+      if (candidate.available()) return candidate
+    }
+    return undefined
+  }
+
   const provider = new SerperSearchProvider({
     // key / 端点全部惰性（每次搜索时读取）：保存新 config 后对后续请求生效
     resolveKey,
+    resolveFallback,
     baseURLOptions: () => {
       const cfg = readConfig()
       return {

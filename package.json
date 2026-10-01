@@ -1,7 +1,7 @@
 {
   "name": "@dingpenghui/dsh-web-search-serper",
-  "version": "1.0.1",
-  "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam (ctx.web) — one-line insert, key via config / env / credential store",
+  "version": "1.1.0",
+  "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam (ctx.web) — installs as a bundle and takes over web.searchProvider, with automatic fallback to another provider when Serper is unavailable; key via config / env / credential store",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -23,6 +23,7 @@
     "cordis.patch.yml",
     "RELEASE_NOTES_v1.0.0.md",
     "RELEASE_NOTES_v1.0.1.md",
+    "RELEASE_NOTES_v1.1.0.md",
     "README.md",
     "README.zh.md",
     "LICENSE"

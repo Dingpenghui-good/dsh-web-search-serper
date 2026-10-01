@@ -18,7 +18,8 @@ Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 
 - 🔒 **隐私友好** — 不追踪用户，无 Cookie 收集
 - 💰 **免费额度高** — 每月 2,500 次查询，免费使用
 - 🌍 **多语言支持** — 支持全球多个国家/地区的搜索结果
-- 🔧 **一行 insert** — profile `cordis.patch.yml` 里一行接入；key 每次搜索惰性解析（config → 环境变量 → 凭证库），改动无需重启
+- 🔧 **开箱接管** — 作为 bundle 安装后自动接管 `web.searchProvider`；key 每次搜索惰性解析（config → 环境变量 → 凭证库），改动无需重启
+- 🛟 **失败自动降级** — Serper 不可用时自动回退到其它可用搜索提供方，不会让 `web_search` 整体失效
 
 ---
 
@@ -42,31 +43,60 @@ pnpm run build
 
 ### 配置
 
-在 DSH 的 `cordis.patch.yml`（profile 补丁层）中添加：
+**作为 bundle 安装时（推荐）无需任何手动配置。** 本包自带的 `cordis.patch.yml`
+会随 bundle 一起生效，把 web seam 的搜索提供方接管为 `serper`：
 
 ```yaml
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: serper     # 覆盖 dsh-base 默认的 deepseek-official
+    fetchProvider: http        # 必须重述：patch 会整行替换 config
 - insert:
     - id: web-search-serper
       name: '@dingpenghui/dsh-web-search-serper'
 ```
 
-无需 `config` 即可工作：API key 在每次搜索时按以下顺序惰性解析：
+> **为什么必须接管？** `dsh-base` 把 `web.searchProvider` 固定为
+> `deepseek-official`，而 web seam 的选择语义是「配了 id 就只用它、失败也不
+> 换人」。只 `insert` 而不管接管的话，本插件即使注册成功也永远不会被调用，
+> 而且**不报任何错**。profile 自己的 `cordis.patch.yml` 在 bundle 层之后应用、
+> 优先级更高，想换回其它搜索后端时在自己的 patch 里覆盖 `- id: web` 即可。
+
+若你不走 bundle 机制、而是手动把行复制进 profile patch，请把上面**两段一起**
+复制过去，否则同样不会生效。
+
+API key 无需配置即可工作，每次搜索时按以下顺序惰性解析：
 
 1. 行 `config.apiKey`（显式配置，需给行加 `config` 块；插件详情页保存后经 volatile HMR 即时生效）；
 2. DSH 宿主进程的环境变量 `SERPER_API_KEY`；
 3. DSH 凭证库中的 `SERPER_API_KEY` 引用
    （`$DSH_HOME/.credentials.yaml` 的 `refs:` —— 每次搜索实时解析，改动无需重启）。
 
-也可以在 composition 中固定 key 与选项：
+在 composition 中固定 key 与选项：
 
 ```yaml
-- insert:
-    - id: web-search-serper
-      name: '@dingpenghui/dsh-web-search-serper'
-      config:
-        apiKey: your-serper-api-key
-        gl: cn  # 可选：设置默认国家代码
+- id: web-search-serper
+  name: '@dingpenghui/dsh-web-search-serper'
+  config:
+    apiKey: your-serper-api-key
+    gl: cn  # 可选：设置默认国家代码
 ```
+
+### 运行行为：优先 Serper，失败自动降级
+
+- **优先** — 只要 Serper 配置就绪（有 key、端点合法），一律走 Serper；
+- **降级** — Serper 因任何原因失败（无 key、401/403 鉴权失败、429 限流、5xx、
+  网络异常、端点配置错误等）时，自动改用 seam 上其它已注册且可用的搜索提供方，
+  通常是 `dsh-base` 自带的 `deepseek-official`；
+- **不降级** — 用户主动取消（`WEB_ABORTED`）不触发降级；
+- **两侧都失败** — 上抛 `WEB_PROVIDER_ERROR`，消息同时包含主后端与降级后端的
+  失败原因，降级错误挂在 `cause` 链上。
+
+降级在**插件内部**完成，因为 DSH 的 web seam 自身不做回退（配置了 id 就只用它）。
+相应地，`available()` 在「Serper 侧不可用、但存在可降级目标」时仍返回 `true` ——
+否则 seam 会在进入 `search()` 之前就以 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`
+拦下，降级根本无从发生。
 
 ### 获取 API Key
 
@@ -125,6 +155,10 @@ console.log(result.sources)
 | `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` | provider 已注册但没有可用 key | 检查 API Key：config / `$SERPER_API_KEY` / 凭证引用 |
 | `WEB_ABORTED` | 请求被中止 | 检查 AbortSignal |
 | `WEB_PROVIDER_ERROR` | API 请求失败 | 检查网络 / API Key / 速率限制 |
+
+> 只有**降级目标同样不可用**时，`WEB_PROVIDER_CONFIGURED_UNAVAILABLE` 与
+> `WEB_PROVIDER_ERROR` 才会冒泡到 `web_search`；Serper 单独失败会被自动降级
+> 吸收（见上文「运行行为」）。
 
 ---
 

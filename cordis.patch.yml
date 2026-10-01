@@ -1,23 +1,44 @@
-# @dingpenghui/dsh-web-search-serper bundle patch — 安装后经 profile 加载自动生效
+# @dingpenghui/dsh-web-search-serper bundle patch — 安装后经 profile 加载自动生效。
 #
-# 用法：把本包作为 bundle 装入某个 dsh profile
-#   （profile 的 package.json `dependencies` 加
-#     "@dingpenghui/dsh-web-search-serper": "<版本号>"（或 "link:<本目录绝对路径>"），
-#     并同步 package.json `dsh.profile.bundles` 与 cordis.patch.yml
-#     的 insert 行），或直接复制本文件内容到 profile 的
-#     cordis.patch.yml：
+# 本 patch 做两件事：
+#   1. 把 web seam 的 search provider 接管为 `serper`。dsh-base 默认把
+#      `web.searchProvider` 写死为 `deepseek-official`，而 seam 的选择语义是
+#      「配了 id 就只用它、失败也不换人」——不接管的话，本插件即使注册成功
+#      也永远不会被调用，且不报任何错。
+#   2. 插入插件自身的行。
 #
-#   - insert:
-#       - id: web-search-serper
-#         name: '@dingpenghui/dsh-web-search-serper'
-#         config:
-#           gl: cn
+# ⚠️ DSH 的 patch 语义是「整行替换 config」：`- id: web` 会替换 dsh-base
+#    中 web 行的整个 config，因此下方必须重述该行拥有的每一个 key
+#    （含 fetchProvider，漏掉它等于抹掉 fetch 配置）。
+#    profile 自己的 cordis.patch.yml 在 bundle 层之后应用、优先级更高，
+#    部署方若想换回其它搜索后端，在自己的 patch 里覆盖 `- id: web` 即可。
 #
 # 行 id 即配置命名空间：`web-search-serper`。config 全部可选，
 # 缺省时 API key 按以下顺序解析：
 #   1. config.apiKey（显式配置）
 #   2. 宿主进程环境变量 $SERPER_API_KEY
 #   3. 凭证库引用 SERPER_API_KEY（credentials 服务，热解析）
+#
+# 追加选项（gl / cr / numResults / baseURL）时，在自己的 patch 层里给该行补
+# config 块即可，例如：
+#
+#   - id: web-search-serper
+#     name: '@dingpenghui/dsh-web-search-serper'
+#     config:
+#       gl: cn
+#
+# 运行行为：**优先走 Serper**；Serper 不可用（无 key、鉴权失败、限流、
+# 网络异常、端点配置错误等）时**自动降级**到 seam 上其它已注册且可用的
+# 搜索 provider（通常是 dsh-base 自带的 deepseek-official）；两者都不可用
+# 时才向上抛错。
+
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    # 接管搜索：从 dsh-base 的 deepseek-official 切换到本插件。
+    searchProvider: serper
+    # 必须重述：上面一条整行替换 config，漏掉它等于抹掉 dsh-base 的 fetch 配置。
+    fetchProvider: http
 
 - insert:
     - id: web-search-serper

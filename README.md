@@ -18,7 +18,8 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 - 🔒 **Privacy Friendly** — No user tracking, no cookie collection
 - 💰 **Generous Free Tier** — 2,500 monthly queries at no cost
 - 🌍 **Multi-language Support** — Results from countries/regions worldwide
-- 🔧 **One-line Insert** — a single row in your profile `cordis.patch.yml`; key resolved lazily per search (config → env → credential store), no restart on change
+- 🔧 **Takes Over Out of the Box** — installing it as a bundle claims `web.searchProvider` automatically; key resolved lazily per search (config → env → credential store), no restart on change
+- 🛟 **Automatic Fallback** — when Serper is unavailable it hands the request to another usable search provider instead of breaking `web_search` entirely
 
 ---
 
@@ -42,13 +43,30 @@ pnpm run build
 
 ### Configure
 
-Add to your DSH `cordis.patch.yml` (profile patch layer):
+**Installing as a bundle (recommended) needs no manual configuration.** The
+package's own `cordis.patch.yml` is applied with the bundle and claims the web
+seam's search provider for `serper`:
 
 ```yaml
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: serper     # overrides dsh-base's deepseek-official
+    fetchProvider: http        # must be restated: a patch replaces the whole config
 - insert:
     - id: web-search-serper
       name: '@dingpenghui/dsh-web-search-serper'
 ```
+
+> **Why the takeover is required.** `dsh-base` pins `web.searchProvider` to
+> `deepseek-official`, and the seam's selection rule is "a configured id is the
+> only candidate — never a fallback on failure". Inserting the row without the
+> takeover leaves the plugin registered but **never invoked, and silently so**.
+> Your profile's own `cordis.patch.yml` is applied after the bundle layer and
+> wins, so overriding `- id: web` there switches to another backend.
+
+If you are not using the bundle mechanism and copy rows into your profile patch
+by hand, copy **both** blocks above — otherwise it will not take effect either.
 
 No `config` is required: the API key is resolved lazily per search in this order:
 
@@ -60,13 +78,30 @@ No `config` is required: the API key is resolved lazily per search in this order
 To pin the key and options in the composition instead:
 
 ```yaml
-- insert:
-    - id: web-search-serper
-      name: '@dingpenghui/dsh-web-search-serper'
-      config:
-        apiKey: your-serper-api-key
-        gl: cn  # Optional: set default country code
+- id: web-search-serper
+  name: '@dingpenghui/dsh-web-search-serper'
+  config:
+    apiKey: your-serper-api-key
+    gl: cn  # Optional: set default country code
 ```
+
+### Behavior: Serper first, automatic fallback
+
+- **Preferred** — whenever Serper is ready (key present, endpoint valid) it is used;
+- **Fallback** — if Serper fails for any reason (missing key, 401/403 auth
+  failure, 429 rate limit, 5xx, network error, misconfigured endpoint, …), the
+  request is handed to another registered and usable search provider on the
+  seam, normally the `deepseek-official` provider shipped with `dsh-base`;
+- **Not on cancel** — a user cancellation (`WEB_ABORTED`) never falls back;
+- **Both down** — throws `WEB_PROVIDER_ERROR` whose message names both the
+  primary and the fallback failure, with the fallback error on the `cause` chain.
+
+The fallback lives **inside the plugin**, because the DSH web seam itself does
+not fall back (a configured id is the only candidate). Accordingly,
+`available()` still returns `true` when Serper is unusable but a fallback target
+exists — otherwise the seam would reject the provider with
+`WEB_PROVIDER_CONFIGURED_UNAVAILABLE` before `search()` ever ran, and no
+fallback could happen.
 
 ### Get API Key
 
@@ -126,6 +161,10 @@ console.log(result.sources)
 | `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` | Provider registered but no key available | Check API key: config / `$SERPER_API_KEY` / credential reference |
 | `WEB_ABORTED` | Request was aborted | Check AbortSignal |
 | `WEB_PROVIDER_ERROR` | API request failed | Check network / API key / rate limits |
+
+> `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` and `WEB_PROVIDER_ERROR` only reach
+> `web_search` when the **fallback target is unusable too**; a Serper-only
+> failure is absorbed by the automatic fallback (see "Behavior" above).
 
 ---
 
