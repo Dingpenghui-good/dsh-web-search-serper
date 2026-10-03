@@ -1,6 +1,6 @@
 {
   "name": "@dingpenghui/dsh-web-search-serper",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam (ctx.web) — installs as a bundle and takes over web.searchProvider, with automatic fallback to another provider when Serper is unavailable; key via config / env / credential store",
   "type": "module",
   "main": "./lib/index.js",
@@ -24,6 +24,7 @@
     "RELEASE_NOTES_v1.0.0.md",
     "RELEASE_NOTES_v1.0.1.md",
     "RELEASE_NOTES_v1.1.0.md",
+    "RELEASE_NOTES_v1.1.1.md",
     "README.md",
     "README.zh.md",
     "LICENSE"
@@ -66,13 +67,15 @@
     "test": "node smoke-test.mjs",
     "prepublishOnly": "pnpm run typecheck && pnpm run build"
   },
-  "dependencies": {
-    "@deepseek-ai/cordis": "^4.0.4",
+  "dependencies": {},
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-web": "0.2.0-rc.2",
     "@deepseek-ai/schemastery": "^3.18.4"
   },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4"
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-web": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",

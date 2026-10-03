@@ -93,6 +93,8 @@ API key 无需配置即可工作，每次搜索时按以下顺序惰性解析：
 - **两侧都失败** — 上抛 `WEB_PROVIDER_ERROR`，消息同时包含主后端与降级后端的
   失败原因，降级错误挂在 `cause` 链上。
 
+> **重启须知** — DSH 的 `patchReload: live` 会热重载配置层（`cordis.patch.yml`），但插件代码（`lib/index.js`）是 ESM 模块，进程内缓存不会自动刷新。所以即使配置（如接管）立即生效，插件内部逻辑（如降级）需要**重启宿主**后才能生效。
+
 降级在**插件内部**完成，因为 DSH 的 web seam 自身不做回退（配置了 id 就只用它）。
 相应地，`available()` 在「Serper 侧不可用、但存在可降级目标」时仍返回 `true` ——
 否则 seam 会在进入 `search()` 之前就以 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`
