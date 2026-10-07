@@ -187,3 +187,6 @@ console.log(result.sources)
 ## License
 
 MIT License — See [LICENSE](LICENSE) file
+
+
+Support any Serper.dev-compatible endpoint (like litescrape.com, serpbase.dev, serpensapi.org, and others). Set `baseURL` to the provider base URL (without `/search`) and configure an API key issued by that provider. The `/search` path is appended automatically.
