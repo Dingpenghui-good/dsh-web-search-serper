@@ -7,7 +7,7 @@
 
 ## 概述
 
-`@dingpenghui/dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，适配当前 DeepSeek Harness (DSH) 的 web 能力 seam（`ctx.web`，`@deepseek-ai/dsh-web` `0.2.0-rc.x`）。
+`@dingpenghui/dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，适配 DeepSeek Harness (DSH) 的 web 能力 seam（`ctx.web`，`@deepseek-ai/dsh-web` `0.2.0-rc.x`）。本版本针对 DSH **0.2.0-rc.2** 构建与验证。
 
 Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 Google 搜索结果 API。免费额度：**每月 2,500 次查询**，无需信用卡。
 
@@ -20,6 +20,8 @@ Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 
 - 🌍 **多语言支持** — 支持全球多个国家/地区的搜索结果
 - 🔧 **开箱接管** — 作为 bundle 安装后自动接管 `web.searchProvider`；key 每次搜索惰性解析（config → 环境变量 → 凭证库），改动无需重启
 - 🛟 **失败自动降级** — Serper 不可用时自动回退到其它可用搜索提供方，不会让 `web_search` 整体失效
+- ⚙️ **插件页内的设置界面** — 在「插件」列表点插件名（或行上的「配置」）即可编辑 Key、端点、`gl` / `cr` 与默认结果数量；保存后对下一次搜索即时生效，无需重启
+- 🔁 **配置热读取** — 每次搜索都重读行 config（含 `ctx.settings.describe()` 中以 `volatile()` 包装返回的值），所以在别处改动凭证或选项同样立即生效
 
 ---
 
@@ -100,6 +102,42 @@ API key 无需配置即可工作，每次搜索时按以下顺序惰性解析：
 否则 seam 会在进入 `search()` 之前就以 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`
 拦下，降级根本无从发生。
 
+### 设置界面（插件页）
+
+Client 半边把插件自己的配置页注册进「插件」页声明的两个 slot：
+`plugins.bundle.config`（以 npm 包名为 key，显示在插件自己的页面上）与
+`plugins.row.config`（以 `@dingpenghui/dsh-web-search-serper#web-search-serper`
+为 key，行上的「配置」控件打开它）。两者都经 `configForms.whileServed` 跟随
+Host 实际在 serve 的 settings 命名空间：命名空间被 serve 时才出现，不再
+被 serve 时自动撤下。
+
+可编辑项：API Key、端点基址、`gl`、`cr`、默认结果数量。在 `0.2.0-rc.2` 上：
+插件页（`plugins.bundle.config`）只承担只读概览，真正的编辑与保存发生在行的
+「配置」页（`plugins.row.config`），经宿主设置表单写入插件行 config。
+
+由于每次搜索都会重读 `ctx.settings.describe()`（`volatile()` 字段在其中以
+`{ get(): value }` 包装返回，插件按宿主 `plainConfig` 同样的方式解包），
+保存后的值对下一次搜索立即生效，**无需重启宿主**。
+
+### 兼容性
+
+| DSH 运行时 | 插件版本 |
+|-----------|----------|
+| `0.2.0-rc.x`（已在 `0.2.0-rc.2` 上验证） | `1.2.2` |
+| `0.1.7-rc.x` | `1.2.0` |
+| `0.2.1-rc.x` | 暂不支持——该版本线的客户端公共包未发布 |
+
+`1.2.2` 面向 `0.2.0-rc.2` 的 slot / 页面 API：`plugins.bundle.config` 只收到
+`view: 'page'`（**没有 `form`**，因此渲染只读概览），`plugins.row.config` 才会
+收到行自己的 `form`（`state` + `mutate`），是真正可编辑并保存的视图；两者都经
+`configForms.whileServed` 跟随命名空间是否被 serve。`@deepseek-ai/dsh-web` 与
+`@deepseek-ai/dsh-llm` 声明为普通依赖，因此不会被兼容性门禁拦下；peer 只覆盖
+`cordis` / `schemastery`。
+
+> `0.2.0-rc.2` 的客户端公共包只有 JS、没有 `.d.ts`，且该版本线没有发布带类型的
+> 包，所以插件在 `src/contracts.d.ts` 与 `src/client/*.d.ts` 里按实际
+> `lib/*.js` 逐项声明它所消费的契约。
+
 ### 获取 API Key
 
 1. 访问 [https://serper.dev](https://serper.dev)
@@ -170,6 +208,7 @@ console.log(result.sources)
 2. **仅支持 Google 搜索** — 不支持 Bing、Baidu 等其他搜索引擎
 3. **无生成答案** — 仅返回搜索结果列表，不包含 AI 生成的摘要
 4. **需要 API Key** — 必须通过配置、环境变量或凭证引用提供有效的 Serper API Key
+5. **一次只对一个 DSH 版本线** — `1.2.2` 面向 DSH `0.2.0-rc.x`；换到其它版本线需要对应版本的插件（见「兼容性」）
 
 ---
 

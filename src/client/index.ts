@@ -1,109 +1,93 @@
 /**
- * Client-side entry for the dsh-web-search-serper plugin. Registers the
- * plugin detail page (the screen opened when clicking the plugin's name in
- * the Plugins list) through the Plugins page's `plugins.bundle.config` and
- * `plugins.row.config` slots. The page hosts the search settings form:
- * apiKey / baseURL / gl / cr / numResults, saved through the Host's
- * settings form (settings namespace `web-search-serper`).
+ * Client-side entry for the dsh-web-search-serper plugin.
+ *
+ * Registers the plugin's configuration page — the screen opened from the
+ * plugin name in the Plugins list — through the two slots the Plugins page
+ * declares for other plugins:
+ *
+ * - `plugins.bundle.config`, keyed by the npm package name: rendered on the
+ *   bundle's page under its description (`view: 'page'` only). The page decides
+ *   from its configuration ledger whether that section exists at all, and it
+ *   does NOT hand the bundle page a `form`, so this view renders read-only.
+ * - `plugins.row.config`, keyed by `<package name>#<row id>`: rendered when the
+ *   row's configure control opens the row's own page. The row page passes a
+ *   `form` built from the row's `configForm(id)` (`state` + `mutate`), and this
+ *   view is the editable one.
+ *
+ * Both registrations follow the Host's served settings namespaces through
+ * `configForms.whileServed`, so a deployment that never composes the settings
+ * transport shows no trace of the page. The editable page hosts the search
+ * settings form: apiKey / baseURL / gl / cr / numResults, saved through the
+ * row's settings form (namespace = this plugin row's entry id,
+ * `web-search-serper`).
+ *
+ * Why the page is a plain component rather than a shared `SettingsFormModel`:
+ * the editable `form` arrives as a PROPERTY of the row page's render (the page
+ * owner reads `configForm(id)` itself), so the component reads `props.form.state`
+ * and submits through `props.form.mutate` with precise path ops.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-// Type-only: the Plugins page slot contract (plugins.bundle.config /
-// plugins.row.config); the owner's SlotMap merge, never a runtime import.
-import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 // Type-only: pulls the ctx.locale merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: the ctx.configForms Context merge and the settings slot types.
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 
-import { SerperSearchPageController } from './plugin-detail-controller.ts'
-import type { SerperSearchSettings } from '../shared.ts'
 import { SerperSearchDetailPage } from './plugin-detail-page.tsx'
 import { zh as zhDict, en as enDict } from '../locales/index.ts'
 // Shared barrel: keeps this bundle free of Host-only package value imports.
 import {
   SERPER_SEARCH_NAMESPACE,
+  SERPER_SEARCH_LOCALE_NS,
   PLUGIN_PACKAGE_NAME,
   PLUGIN_ROW_CONFIG_KEY,
 } from '../shared.ts'
 
-const DICT_NS = 'settings.dsh-web-search-serper'
-
-/**
- * 占位 ConfigForm：宿主未提供 settings 传输（configForms 服务缺失）时，
- * 详情页以只读「不可用」快照呈现，保存控件随之禁用 —— 条目永不因缺失
- * 而抛错。所有 getter 都是惰性 thunk（与真实 scope 的快照模型一致）。
- */
-function unavailableForm(): ConfigForm<SerperSearchSettings> {
-  const snapshot = () => ({
-    status: 'unavailable' as const,
-    value: undefined as SerperSearchSettings | undefined,
-    base: undefined,
-    user: undefined,
-    writable: false,
-    revision: 0,
-    mode: 'host' as const,
-  })
-  return {
-    getSnapshot: snapshot,
-    subscribe: (listener) => {
-      // 只读占位永不提交；返回一个真实的空 disposer（与真实订阅同形）。
-      listener()
-      return () => {}
-    },
-    set: () => Promise.resolve(false),
-    unset: () => Promise.resolve(false),
-    mutate: () => Promise.resolve(false),
-  } as ConfigForm<SerperSearchSettings>
-}
-
+/** Required services: the page registers into slots and needs the locale runtime. */
 export const inject = ['slots', 'locale'] as const
 
+/**
+ * Mount the Serper search settings page once the Host serves its namespace.
+ * @param ctx - the browser plugin context.
+ */
 export function apply(ctx: ClientContext): void {
-  const slots = ctx.get('slots')!
-  const locale = ctx.get('locale')!
+  // 字典按 (命名空间, 语言) 注册；重复注册会抛错，因此用 ctx.effect 声明生命周期，
+  // 让插件的重载 / 卸载把两组字典一起撤掉。
+  ctx.effect(
+    () => ctx.locale.register(SERPER_SEARCH_LOCALE_NS, { zh: zhDict, en: enDict }),
+    'serper-search: dictionaries',
+  )
 
-  // Register locale dictionaries
-  ctx.effect(() => locale.register(DICT_NS, { zh: zhDict, en: enDict }), 'serper-search: dictionaries')
-
-  // 详情页：把搜索设置表单（apiKey / 端点 / 地区 / 数量）挂到插件详情页。
-  // 激活健壮性（0.2.0-rc.2）：configForms 不是硬依赖，缺失时降级为只读占位
-  // 表单（status: unavailable），条目永不因服务缺失而抛错；slot 注册本身
-  // 不读 configForms，随页面打开才惰性拉取快照。
-  const configForms = ctx.get('configForms')
-
-  const scope: ConfigForm<SerperSearchSettings> = configForms
-    ? configForms.get(SERPER_SEARCH_NAMESPACE)
-    : unavailableForm()
-
-  const detailPage = new SerperSearchPageController(scope)
-  ctx.effect(() => () => {
-    detailPage.dispose()
-  }, 'serper-search: detail form subscriptions')
-
-  ctx.effect(() => {
-    // configForms 缺失（宿主未提供 settings 传输）时不注册详情页 slot，
-    // 但仍返回一个空 cleanup，保持 effect 回调返回类型一致（Disposable）。
-    if (configForms === undefined) return () => {}
-    // Bundle 详情页（点击插件名字打开的画面）：描述与行之间的配置区块。
-    const bundleDisposer = slots.inject('plugins.bundle.config', () => slots.register({
-      name: 'plugins.bundle.config',
-      key: PLUGIN_PACKAGE_NAME,
-      locale: DICT_NS,
-      inject: () => detailPage.inject(),
-    }, SerperSearchDetailPage))
-    // 行详情页（行上"配置"控件打开的画面）：`<package>#<row id>` key。
-    const rowDisposer = slots.inject('plugins.row.config', () => slots.register({
-      name: 'plugins.row.config',
-      key: PLUGIN_ROW_CONFIG_KEY,
-      locale: DICT_NS,
-      inject: () => detailPage.inject(),
-    }, SerperSearchDetailPage))
+  // 页面只在 Host 真的在 serve 这个 settings 命名空间时出现；命名空间暂时
+  // 不可用时（刚安装 / 刚更新、尚未重启）自动撤下，恢复后自动装回。
+  // `configForms` 由 client ui-settings 组合；缺失时这里什么都不注册。
+  const register = () => {
+    const disposers: Array<() => void> = [
+      ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+        name: 'plugins.bundle.config',
+        key: PLUGIN_PACKAGE_NAME,
+        locale: SERPER_SEARCH_LOCALE_NS,
+      }, SerperSearchDetailPage)),
+      ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+        name: 'plugins.row.config',
+        key: PLUGIN_ROW_CONFIG_KEY,
+        locale: SERPER_SEARCH_LOCALE_NS,
+      }, SerperSearchDetailPage)),
+    ]
     return () => {
-      rowDisposer()
-      bundleDisposer()
+      for (const dispose of disposers.reverse()) dispose()
     }
-  }, 'serper-search: detail page')
+  }
+
+  const configForms = ctx.get('configForms') as
+    | { whileServed(namespaces: readonly string[], register: (served: ReadonlySet<string>) => () => void): () => void }
+    | undefined
+  if (configForms !== undefined && typeof configForms.whileServed === 'function') {
+    ctx.effect(
+      () => configForms.whileServed([SERPER_SEARCH_NAMESPACE], register),
+      'serper-search: detail pages',
+    )
+  } else {
+    // 没有 settings 传输时仍然注册：页面会显示"设置服务未就绪"的提示。
+    ctx.effect(register, 'serper-search: detail pages')
+  }
 }

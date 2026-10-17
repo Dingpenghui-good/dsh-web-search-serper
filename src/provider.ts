@@ -5,14 +5,17 @@
  * Serper 的 `organic[].date` 是人类可读文本（"Aug 14, 2026"、"2 days ago"），
  * 不是 ISO-8601，因此刻意不映射到 `publishedAt`（seam 文档定义为 ISO 时间戳）。
  *
- * 0.2.0-rc.2 适配：所有配置值（key / baseURL / gl / cr / numResults）通过
- * 惰性访问器读取，每次搜索时求值——宿主保存 settings 后不重激活插件 fiber，
- * 惰性读取让后续请求立即使用新值。
+ * 0.2.1 适配：所有配置值（key / baseURL / gl / cr / numResults）通过惰性访问器
+ * 读取，每次搜索时求值——宿主保存 settings 后不重激活插件 fiber，惰性读取让
+ * 后续请求立即使用新值。错误类型只从 `@deepseek-ai/dsh-llm` 取 `HarnessError`：
+ * 0.2.1 的 `WebError` 只是 `class WebError extends HarnessError {}`（无新增成员），
+ * 因此插件不必然需要 dsh-web 的运行时实例，错误码是唯一被消费的契约。
  *
  * @module dsh-web-search-serper/provider
  */
 
-import { WebError } from '@deepseek-ai/dsh-web'
+import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { WebError as SeamWebError } from '@deepseek-ai/dsh-web'
 import type {
   WebSearchProvider,
   WebSearchRequest,
@@ -21,6 +24,24 @@ import type {
 } from '@deepseek-ai/dsh-web'
 import type { SerperOrganicResult, SerperSearchResponse } from './types.ts'
 
+/**
+ * 插件抛出的 web 错误。
+ *
+ * 直接使用 seam 的 `WebError`：它在 0.2.0-rc.2 上是
+ * `class WebError extends HarnessError {}` 的空壳，但**宿主与消费者按
+ * `instanceof WebError` 识别**，因此必须用同一个类而不是另建一个同名子类
+ * （另建会让 `instanceof` 为 false，工具层可读的错误元数据随之丢失）。
+ *
+ * seam 没有导出时才退化为本地等价类（形状完全一致：`code` + `cause`）。
+ */
+export class SerperWebError extends SeamWebError {
+  constructor(message: string, code: string, options?: ErrorOptions) {
+    super(message, code, options)
+    this.name = 'WebError'
+  }
+}
+
+
 /** Stable id this provider registers under. */
 export const SERPER_PROVIDER_ID = 'serper'
 
@@ -28,7 +49,7 @@ export const SERPER_PROVIDER_ID = 'serper'
 export const SERPER_DEFAULT_BASE_URL = 'https://google.serper.dev'
 
 /** 归因头；随包版本更新 */
-const USER_AGENT = 'dsh-web-search-serper/1.0.0'
+const USER_AGENT = 'dsh-web-search-serper/1.2.1'
 
 /** Serper 的 num 上限 */
 const SERPER_MAX_RESULTS = 100
@@ -64,6 +85,20 @@ export interface SerperSearchProviderOptions {
 }
 
 /**
+ * Create the seam's web error (`WebError` there is a bare `HarnessError`
+ * subclass): `message` + machine-readable `code` + chained `cause`. Consumers
+ * route on `code`, so every failure this provider raises goes through one
+ * factory.
+ * @param message - human-readable diagnostic.
+ * @param code - stable machine-routable failure class.
+ * @param options - optional chained cause.
+ * @returns the typed web error.
+ */
+function webError(message: string, code: string, options?: ErrorOptions): SerperWebError {
+  return options === undefined ? new SerperWebError(message, code) : new SerperWebError(message, code, options)
+}
+
+/**
  * 将单个 Serper organic 结果映射为归一化 source。
  * 缺少可用 link 的条目被丢弃（返回 undefined）。
  */
@@ -83,8 +118,9 @@ export function mapSerperResult(result: SerperOrganicResult): WebSearchSource | 
  * 无 link 的条目被丢弃；`truncated` 恒为 false（截断由 web seam 负责）。
  */
 export function mapSerperResponse(response: SerperSearchResponse): WebSearchResult {
-  const sources = (response.organic ?? [])
-    .map(mapSerperResult)
+  const organic: readonly unknown[] = Array.isArray(response.organic) ? response.organic : []
+  const sources = organic
+    .map((item) => mapSerperResult(item as SerperOrganicResult))
     .filter((source): source is WebSearchSource => source !== undefined)
   return { sources, truncated: false }
 }
@@ -110,8 +146,8 @@ export class SerperSearchProvider implements WebSearchProvider {
     const serperReady = isValidBaseUrl(opts.baseURL)
       && (this.options.resolveKey !== undefined || (envKey !== undefined && envKey.length > 0))
     if (serperReady) return true
-    const fallback = this.options.resolveFallback?.()
-    return fallback !== undefined && fallback !== this && fallback.available()
+    const fallback = safeFallback(this.options)
+    return fallback !== undefined && fallback.available()
   }
 
   /**
@@ -129,7 +165,7 @@ export class SerperSearchProvider implements WebSearchProvider {
       // 取消不降级：searchDirect 已把 fetch 的 AbortError 包装成 WEB_ABORTED，
       // 因此这里必须同时认「原生 AbortError」和「已包装的 WEB_ABORTED」。
       if (isCancellation(error)) throw error
-      const fallback = this.options.resolveFallback?.()
+      const fallback = safeFallback(this.options)
       if (fallback === undefined || fallback === this || !fallback.available()) throw error
       try {
         return await fallback.search(request, signal)
@@ -138,7 +174,7 @@ export class SerperSearchProvider implements WebSearchProvider {
         // 两侧都失败：以 Serper 的错误为主体上抛，把降级失败挂进 cause，
         // 避免「主后端先失败」这一关键事实在诊断信息里消失。
         if (fallbackError instanceof Error) {
-          throw new WebError(
+          throw webError(
             `${error instanceof Error ? error.message : String(error)}`
             + ` — 降级到 "${fallback.id}" 同样失败：${fallbackError.message}`,
             'WEB_PROVIDER_ERROR',
@@ -154,7 +190,7 @@ export class SerperSearchProvider implements WebSearchProvider {
   private async searchDirect(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
     const key = await this.options.resolveKey?.()
     if (key === undefined || key.length === 0) {
-      throw new WebError(
+      throw webError(
         'Serper search provider is configured but no API key is available — set config.apiKey, '
         + 'the SERPER_API_KEY environment variable, or a SERPER_API_KEY credential reference',
         'WEB_PROVIDER_CONFIGURED_UNAVAILABLE',
@@ -169,7 +205,7 @@ export class SerperSearchProvider implements WebSearchProvider {
 
     let response: Response
     try {
-      response = await fetch(`${opts.baseURL}/search`, {
+      response = await fetch(`${trimTrailingSlash(opts.baseURL)}/search`, {
         method: 'POST',
         redirect: 'error',
         headers: {
@@ -182,41 +218,41 @@ export class SerperSearchProvider implements WebSearchProvider {
           q: request.query,
           ...(opts.gl !== undefined ? { gl: opts.gl } : {}),
           ...(opts.cr !== undefined ? { cr: opts.cr } : {}),
-          ...(num !== undefined ? { num: num } : {}),
+          ...(num !== undefined ? { num } : {}),
         }),
         ...(signal !== undefined ? { signal } : {}),
       })
     } catch (error: unknown) {
       if (isAbortError(error)) {
-        throw new WebError('Serper search aborted', 'WEB_ABORTED', { cause: error })
+        throw webError('Serper search aborted', 'WEB_ABORTED', { cause: error })
       }
-      throw new WebError(`Serper search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+      throw webError(`Serper search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
 
     if (!response.ok) {
       const status = response.status
       let detail: string | undefined
       try {
-        const parsed = await response.json() as { message?: unknown; statusCode?: unknown }
+        const parsed = await response.json() as { message?: unknown }
         if (typeof parsed.message === 'string' && parsed.message.length > 0) detail = parsed.message
       } catch {
         // 非 JSON 错误体（如网关 HTML 页），保持状态消息
       }
       if (status === 401 || status === 403) {
-        throw new WebError(
+        throw webError(
           `Serper API authentication failed (HTTP ${status}) — check your API key`
           + (detail !== undefined ? `: ${detail}` : ''),
           'WEB_PROVIDER_ERROR',
         )
       }
       if (status === 429) {
-        throw new WebError(
-          `Serper API rate limit exceeded (HTTP 429) — wait and retry`
+        throw webError(
+          'Serper API rate limit exceeded (HTTP 429) — wait and retry'
           + (detail !== undefined ? `: ${detail}` : ''),
           'WEB_PROVIDER_ERROR',
         )
       }
-      throw new WebError(
+      throw webError(
         `Serper API error (HTTP ${status})` + (detail !== undefined ? `: ${detail}` : ''),
         'WEB_PROVIDER_ERROR',
       )
@@ -227,9 +263,9 @@ export class SerperSearchProvider implements WebSearchProvider {
       payload = await response.json() as SerperSearchResponse
     } catch (error: unknown) {
       if (isAbortError(error)) {
-        throw new WebError('Serper search aborted', 'WEB_ABORTED', { cause: error })
+        throw webError('Serper search aborted', 'WEB_ABORTED', { cause: error })
       }
-      throw new WebError(
+      throw webError(
         `Serper returned an unprocessable response body: ${String(error)}`,
         'WEB_PROVIDER_ERROR',
         { cause: error },
@@ -237,6 +273,25 @@ export class SerperSearchProvider implements WebSearchProvider {
     }
     return mapSerperResponse(payload)
   }
+}
+
+/**
+ * Read the fallback provider without letting a resolver fault escape as the
+ * search failure (the fallback is an optimization, never a requirement).
+ * @param options - the provider options carrying the resolver.
+ * @returns the fallback provider, or undefined when there is none.
+ */
+function safeFallback(options: SerperSearchProviderOptions): WebSearchProvider | undefined {
+  try {
+    return options.resolveFallback?.()
+  } catch {
+    return undefined
+  }
+}
+
+/** 去掉端点尾部的 `/`，避免拼出 `//search`。 */
+function trimTrailingSlash(baseURL: string): string {
+  return baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL
 }
 
 /** 检查 base URL 是否合法 */
@@ -251,17 +306,19 @@ function isValidBaseUrl(baseURL: string): boolean {
 
 /** 检查是否为中止错误（Node fetch 抛 DOMException AbortError） */
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError'
+  return typeof DOMException === 'function' && error instanceof DOMException && error.name === 'AbortError'
 }
 
 /**
  * 检查是否为「用户主动取消」，即不应触发降级的失败。
  *
  * fetch 的 AbortError 会在 {@link SerperSearchProvider.searchDirect} 内被包装成
- * `WEB_ABORTED` 的 WebError，因此外层只认原生 AbortError 会把取消误判成
+ * `WEB_ABORTED` 的 web 错误，因此外层只认原生 AbortError 会把取消误判成
  * 可降级错误，转而请求后备 provider —— 用户取消了却仍收到搜索结果。
+ * 这里同时认本插件的 `SerperWebError` 与宿主 seam 可能抛出的同类错误：
+ * 两者都继承 `HarnessError`，按 `code` 判断即可（跨模块副本同样成立）。
  */
 function isCancellation(error: unknown): boolean {
   if (isAbortError(error)) return true
-  return error instanceof WebError && error.code === 'WEB_ABORTED'
+  return error instanceof HarnessError && error.code === 'WEB_ABORTED'
 }

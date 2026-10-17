@@ -7,7 +7,7 @@
 
 ## Overview
 
-`@dingpenghui/dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, for the current DeepSeek Harness (DSH) web capability seam (`ctx.web`, `@deepseek-ai/dsh-web` `0.2.0-rc.x`).
+`@dingpenghui/dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, for the DeepSeek Harness (DSH) web capability seam (`ctx.web`, `@deepseek-ai/dsh-web` `0.2.0-rc.x`). It is built and verified against DSH **0.2.0-rc.2**.
 
 Serper.dev is an official Google Search partner providing fast, structured Google search results API. Free tier: **2,500 queries per month**, no credit card required.
 
@@ -20,6 +20,8 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 - 🌍 **Multi-language Support** — Results from countries/regions worldwide
 - 🔧 **Takes Over Out of the Box** — installing it as a bundle claims `web.searchProvider` automatically; key resolved lazily per search (config → env → credential store), no restart on change
 - 🛟 **Automatic Fallback** — when Serper is unavailable it hands the request to another usable search provider instead of breaking `web_search` entirely
+- ⚙️ **Settings Page on the Plugins Page** — the plugin's own page (opened from its name in the Plugins list, or from the row's configure control) edits the key, endpoint, `gl`/`cr` and default result count; saved values apply to the next search without a restart
+- 🔁 **Hot Configuration** — every search re-reads the row config (including `volatile()`-wrapped values from `ctx.settings.describe()`), so credentials and options changed elsewhere are picked up immediately
 
 ---
 
@@ -103,6 +105,47 @@ exists — otherwise the seam would reject the provider with
 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` before `search()` ever ran, and no
 fallback could happen.
 
+### Settings page (Plugins page)
+
+The client half registers the plugin's configuration page into the Plugins
+page's `plugins.bundle.config` slot (keyed by the package name) and the
+row-level `plugins.row.config` slot (keyed by
+`@dingpenghui/dsh-web-search-serper#web-search-serper`). Both follow the Host's
+served settings namespaces through `configForms.whileServed`, so the page
+appears only while `web-search-serper` is served and disappears on its own
+otherwise.
+
+On `0.2.0-rc.2` the two slots render differently: the bundle page passes no
+`form`, so it shows a read-only overview that points at the row's configure
+page; the row page passes the row's `form` (`state` + `mutate`), which is where
+the settings are edited and saved (API key, endpoint base URL, `gl`, `cr`,
+default result count) through the Host's settings form.
+
+Because every search re-reads `ctx.settings.describe()`, a saved row config —
+whose `volatile()` fields arrive as `{ get(): value }` wrappers, unwrapped the
+same way the Host's own `plainConfig` does — applies to the next search without
+restarting the Host.
+
+### Compatibility
+
+| DSH runtime | Plugin version |
+|-------------|----------------|
+| `0.2.0-rc.x` (verified on `0.2.0-rc.2`) | `1.2.2` |
+| `0.1.7-rc.x` | `1.2.0` |
+| `0.2.1-rc.x` | not supported yet — its client platform packages are unpublished |
+
+`1.2.2` targets the `0.2.0-rc.2` slot/page API: `plugins.bundle.config`
+receives only `view: 'page'` (no `form`, so it renders a read-only overview),
+while `plugins.row.config` receives the row's `form` (`state` + `mutate`) and is
+the editable view; both follow `configForms.whileServed`. `@deepseek-ai/dsh-web`
+and `@deepseek-ai/dsh-llm` are ordinary dependencies, so no compatibility gate
+blocks the load; the peer range covers `cordis` / `schemastery` only.
+
+> The `0.2.0-rc.2` client platform packages ship JavaScript without `.d.ts` and
+> no type-declaring copies are published for that line, so the plugin restates
+> the surface it consumes in `src/contracts.d.ts` and `src/client/*.d.ts`
+> (checked against the shipped `lib/*.js`).
+
 ### Get API Key
 
 1. Visit [https://serper.dev](https://serper.dev)
@@ -174,6 +217,7 @@ console.log(result.sources)
 2. **Google Search only** — Does not support Bing, Baidu, or other search engines
 3. **No generated answers** — Returns search results only, no AI-generated summaries
 4. **API Key required** — Must provide a valid Serper API Key via config, environment, or credential reference
+5. **One DSH line at a time** — `1.2.2` is built for DSH `0.2.0-rc.x`; a different runtime line needs the matching plugin version (see "Compatibility")
 
 ---
 

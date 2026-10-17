@@ -9,20 +9,29 @@ const PLUGIN_ID = '@dingpenghui/dsh-web-search-serper'
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 
+/**
+ * Client-bundle externals: exactly the module-table requests this bundle makes.
+ * `react` / `react/jsx-runtime` are platform seed words; every other entry is a
+ * package the 0.2.1 web client serves from its module table (the same names
+ * the official client packages request: the slot registry, the store, the
+ * primitives, the settings/plugin-manager faces). Everything else — schemastery,
+ * cosmokit, zod — inlines, because a `require()` the module table cannot answer
+ * is a guaranteed runtime throw while a second copy of a pure library is harmless.
+ *
+ * The bundle factory receives this `require` as its second argument, so the
+ * platform modules are requested explicitly instead of being bundled.
+ */
 const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',
   'react-dom',
-  'react-dom/client',
   '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-locale',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-ui-renderer',
   '@deepseek-ai/dsh-client-ui-settings',
   '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-plugin-manager',
-  '@deepseek-ai/dsh-web',
 ] as const
 
 const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
@@ -50,6 +59,16 @@ export default defineConfig([
     dts: true,
     sourcemap: true,
     clean: true,
+    // 宿主服务以普通依赖 / peer 形式声明，打包时保持外置，运行时由 Loader
+    // 从 profile 的 node_modules 解析：既保证 HarnessError 与宿主同一份类型
+    // 身份，也不会把宿主包搅进产物。
+    external: [
+      '@deepseek-ai/cordis',
+      '@deepseek-ai/schemastery',
+      /^@deepseek-ai\/dsh-/,
+      /^node:/,
+      /^node\./,
+    ],
   },
   {
     name: `${PLUGIN_ID}/client`,

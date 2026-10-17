@@ -1,16 +1,15 @@
 /**
- * Declaration-merge the `settings.dsh-web-search-serper` locale namespace
- * into the slots `LocaleNamespaceMap`, so `locale: DICT_NS` is accepted and
- * the framework-injected `t` seat carries the typed dictionary-key domain.
+ * Declaration merges for this plugin's client half: the two Plugins-page
+ * configuration slots it renders into and its locale namespace.
  *
- * The value is the union of this namespace's dictionary keys (0.2.0-rc.2
- * shape — not an object, a string-literal union). It must exactly match the
- * keys present in `zh`/`en` in `src/locales/index.ts`; `LocaleDictOf` checks
- * a typed registration's dictionary against it.
- * `export {}` makes this a module file so the `declare module` block is a
- * module augmentation (merges with the resolved slots module) rather than an
- * ambient module declaration.
+ * The tables live in `./client/slots-contract.d.ts` (this plugin's copy of the
+ * 0.2.0-rc.2 slot contract, since the official types are not published for
+ * that line). Composing projects that DO have the official types can map these
+ * same entries onto them — the keys and value shapes are identical.
  */
+
+import type { SerperSlotOwnerProps } from './client/plugin-detail-page.tsx'
+
 export {}
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -28,14 +27,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       | 'page.cr.hint'
       | 'page.numResults.label'
       | 'page.numResults.hint'
+      | 'page.readOnlyHint'
       | 'form.unavailable'
       | 'form.readOnly'
       | 'form.saveFailed'
       | 'form.save'
       | 'form.saving'
-      | 'form.overridden'
-      | 'form.reset'
-      | 'form.invalid'
+  }
+
+  interface SlotMap {
+    /** 插件自己的页面配置（点击插件名进入的页面）：本插件以包名为 key。 */
+    'plugins.bundle.config': { kind: 'keyed'; scope: 'root'; owner: SerperSlotOwnerProps }
+    /** 插件某一行自己的配置页：本插件以 `<包名>#<行 id>` 为 key。 */
+    'plugins.row.config': { kind: 'keyed'; scope: 'root'; owner: SerperSlotOwnerProps }
   }
 }
 
