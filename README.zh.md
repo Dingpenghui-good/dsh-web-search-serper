@@ -7,7 +7,7 @@
 
 ## 概述
 
-`@dingpenghui/dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，适配 DeepSeek Harness (DSH) 的 web 能力 seam（`ctx.web`，`@deepseek-ai/dsh-web` `0.2.0-rc.x`）。本版本针对 DSH **0.2.0-rc.2** 构建与验证。
+`@dingpenghui/dsh-web-search-serper` 是一个基于 Serper.dev API 的 Web 搜索提供方插件，适配 DeepSeek Harness (DSH) 的 web 能力 seam（`ctx.web`，`@deepseek-ai/dsh-web` `0.2.0-rc.x`）。本版本针对 DSH **0.2.0-rc.2** 与 **0.2.1-rc.2** 构建与验证。
 
 Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 Google 搜索结果 API。免费额度：**每月 2,500 次查询**，无需信用卡。
 
@@ -111,7 +111,7 @@ Client 半边把插件自己的配置页注册进「插件」页声明的两个 
 Host 实际在 serve 的 settings 命名空间：命名空间被 serve 时才出现，不再
 被 serve 时自动撤下。
 
-可编辑项：API Key、端点基址、`gl`、`cr`、默认结果数量。在 `0.2.0-rc.2` 上：
+可编辑项：API Key、端点基址、`gl`、`cr`、默认结果数量。在 `0.2.x` 上：
 插件页（`plugins.bundle.config`）只承担只读概览，真正的编辑与保存发生在行的
 「配置」页（`plugins.row.config`），经宿主设置表单写入插件行 config。
 
@@ -123,20 +123,39 @@ Host 实际在 serve 的 settings 命名空间：命名空间被 serve 时才出
 
 | DSH 运行时 | 插件版本 |
 |-----------|----------|
-| `0.2.0-rc.x`（已在 `0.2.0-rc.2` 上验证） | `1.2.2` |
+| `0.2.x`（已在 `0.2.0-rc.2` 与 `0.2.1-rc.2` 上验证） | `1.2.3` |
 | `0.1.7-rc.x` | `1.2.0` |
-| `0.2.1-rc.x` | 暂不支持——该版本线的客户端公共包未发布 |
 
-`1.2.2` 面向 `0.2.0-rc.2` 的 slot / 页面 API：`plugins.bundle.config` 只收到
+`1.2.3` 起用 `engines.dsh`（`>=0.2.0-rc.2 <0.3.0-0`）**统一表达** DSH 兼容范围，
+并且**不再**把 `@deepseek-ai/dsh-web` / `@deepseek-ai/dsh-llm` 写进
+`peerDependencies`。原因见下节。
+
+**为什么 `1.1.1` 装不上：** DSH 的安装门禁（`dsh-app-boot` 的
+`evaluatePluginCompatibility`）在没有 `engines.dsh` 时，会逐个检查
+`@deepseek-ai/dsh-*` 的 `peerDependencies`，并用
+`semver.satisfies(runtime, range, { includePrerelease: true })` 判定。`1.1.1` 把
+`@deepseek-ai/dsh-web` 钉成精确版本 `0.2.0-rc.2`，而在该规则下
+`0.2.1-rc.2` **不满足** `0.2.0-rc.2`，于是安装被拒：
+
+```
+Plugin @dingpenghui/dsh-web-search-serper@1.1.1 is incompatible with dsh 0.2.1-rc.2:
+requirements {"@deepseek-ai/dsh-web":"0.2.0-rc.2"}
+```
+
+`1.2.3` 让 `engines.dsh` 单独决定兼容性（存在 `engines.dsh` 时宿主只看它、忽略
+peer），同时移除对 DSH 运行时包的 peer 声明——这些包由宿主提供，不应由插件再装
+一份。`smoke-test.mjs` 增加了对应回归护栏：优先调用宿主自己的
+`evaluatePluginCompatibility`，宿主不可用时回退到语义等价的实现，确保本插件在
+`0.2.0-rc.2` 与 `0.2.1-rc.2` 上都判定为可安装、在 `0.3.0` / `0.1.5` 上被拒绝。
+
+slot / 页面 API 方面，`1.2.3` 与 `1.2.2` 一致：`plugins.bundle.config` 只收到
 `view: 'page'`（**没有 `form`**，因此渲染只读概览），`plugins.row.config` 才会
 收到行自己的 `form`（`state` + `mutate`），是真正可编辑并保存的视图；两者都经
-`configForms.whileServed` 跟随命名空间是否被 serve。`@deepseek-ai/dsh-web` 与
-`@deepseek-ai/dsh-llm` 声明为普通依赖，因此不会被兼容性门禁拦下；peer 只覆盖
-`cordis` / `schemastery`。
+`configForms.whileServed` 跟随命名空间是否被 serve。
 
-> `0.2.0-rc.2` 的客户端公共包只有 JS、没有 `.d.ts`，且该版本线没有发布带类型的
-> 包，所以插件在 `src/contracts.d.ts` 与 `src/client/*.d.ts` 里按实际
-> `lib/*.js` 逐项声明它所消费的契约。
+> `0.2.1-rc.2` 的客户端公共包已随包发布 `.d.ts`；插件仍然在
+> `src/contracts.d.ts` 与 `src/client/*.d.ts` 里显式声明它消费的契约，以保证
+> 跨版本线的类型稳定。
 
 ### 获取 API Key
 
@@ -208,7 +227,7 @@ console.log(result.sources)
 2. **仅支持 Google 搜索** — 不支持 Bing、Baidu 等其他搜索引擎
 3. **无生成答案** — 仅返回搜索结果列表，不包含 AI 生成的摘要
 4. **需要 API Key** — 必须通过配置、环境变量或凭证引用提供有效的 Serper API Key
-5. **一次只对一个 DSH 版本线** — `1.2.2` 面向 DSH `0.2.0-rc.x`；换到其它版本线需要对应版本的插件（见「兼容性」）
+5. **一次只对一个 DSH 版本线** — `1.2.3` 支持 DSH `0.2.x`（`>=0.2.0-rc.2 <0.3.0-0`）；换到其它版本线需要对应版本的插件（见「兼容性」）
 
 ---
 

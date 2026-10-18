@@ -1,6 +1,6 @@
 {
   "name": "@dingpenghui/dsh-web-search-serper",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam (ctx.web) — installs as a bundle, takes over web.searchProvider, and falls back to another usable provider when Serper is unavailable; key via config / env / credential store",
   "type": "module",
   "main": "./lib/index.js",
@@ -25,13 +25,8 @@
     "README.md",
     "README.zh.md",
     "LICENSE",
-    "RELEASE_NOTES_v1.0.0.md",
-    "RELEASE_NOTES_v1.0.1.md",
-    "RELEASE_NOTES_v1.1.0.md",
-    "RELEASE_NOTES_v1.1.1.md",
-    "RELEASE_NOTES_v1.2.0.md",
-    "RELEASE_NOTES_v1.2.1.md",
-    "RELEASE_NOTES_v1.2.2.md"
+    "RELEASE_NOTES_v1.2.2.md",
+    "RELEASE_NOTES_v1.2.3.md"
   ],
   "dsh": {
     "bundle": {
@@ -71,29 +66,27 @@
     "test": "node smoke-test.mjs",
     "prepublishOnly": "pnpm run typecheck && pnpm run build"
   },
-  "dependencies": {
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-web": "0.2.0-rc.2"
-  },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/schemastery": "~3.18.4"
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/schemastery": "~3.18.5"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/schemastery": { "optional": true }
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-web": "0.2.0-rc.2",
-    "@deepseek-ai/schemastery": "~3.18.4",
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-store": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-web": "0.2.1-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.5",
     "@types/node": "^24.0.0",
     "@types/react": "18.3.12",
     "lightningcss": "1.29.2",
@@ -102,6 +95,7 @@
     "typescript": "^5.9.3"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.0.0",
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   }
 }

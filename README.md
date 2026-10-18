@@ -7,7 +7,7 @@
 
 ## Overview
 
-`@dingpenghui/dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, for the DeepSeek Harness (DSH) web capability seam (`ctx.web`, `@deepseek-ai/dsh-web` `0.2.0-rc.x`). It is built and verified against DSH **0.2.0-rc.2**.
+`@dingpenghui/dsh-web-search-serper` is a web search provider plugin backed by the Serper.dev API, for the DeepSeek Harness (DSH) web capability seam (`ctx.web`, `@deepseek-ai/dsh-web` `0.2.0-rc.x`). It is built and verified against DSH **0.2.0-rc.2** and **0.2.1-rc.2**.
 
 Serper.dev is an official Google Search partner providing fast, structured Google search results API. Free tier: **2,500 queries per month**, no credit card required.
 
@@ -115,7 +115,7 @@ served settings namespaces through `configForms.whileServed`, so the page
 appears only while `web-search-serper` is served and disappears on its own
 otherwise.
 
-On `0.2.0-rc.2` the two slots render differently: the bundle page passes no
+On `0.2.x` the two slots render differently: the bundle page passes no
 `form`, so it shows a read-only overview that points at the row's configure
 page; the row page passes the row's `form` (`state` + `mutate`), which is where
 the settings are edited and saved (API key, endpoint base URL, `gl`, `cr`,
@@ -130,21 +130,41 @@ restarting the Host.
 
 | DSH runtime | Plugin version |
 |-------------|----------------|
-| `0.2.0-rc.x` (verified on `0.2.0-rc.2`) | `1.2.2` |
+| `0.2.x` (verified on `0.2.0-rc.2` and `0.2.1-rc.2`) | `1.2.3` |
 | `0.1.7-rc.x` | `1.2.0` |
-| `0.2.1-rc.x` | not supported yet — its client platform packages are unpublished |
 
-`1.2.2` targets the `0.2.0-rc.2` slot/page API: `plugins.bundle.config`
+Since `1.2.3`, the DSH compatibility range is expressed **solely** by
+`engines.dsh` (`>=0.2.0-rc.2 <0.3.0-0`), and `@deepseek-ai/dsh-web` /
+`@deepseek-ai/dsh-llm` are **not** listed in `peerDependencies`. See below.
+
+**Why `1.1.1` refuses to install:** without `engines.dsh`, DSH's install gate
+(`evaluatePluginCompatibility` in `dsh-app-boot`) inspects every
+`@deepseek-ai/dsh-*` entry of `peerDependencies` and evaluates it with
+`semver.satisfies(runtime, range, { includePrerelease: true })`. `1.1.1` pinned
+`@deepseek-ai/dsh-web` to the exact version `0.2.0-rc.2`, and under that rule
+`0.2.1-rc.2` does **not** satisfy `0.2.0-rc.2`, so the install is rejected:
+
+```
+Plugin @dingpenghui/dsh-web-search-serper@1.1.1 is incompatible with dsh 0.2.1-rc.2:
+requirements {"@deepseek-ai/dsh-web":"0.2.0-rc.2"}
+```
+
+`1.2.3` lets `engines.dsh` decide alone (when present, the host looks at it and
+ignores peers) and drops the peer declarations for host-provided DSH runtime
+packages, which a plugin must not vendor a second copy of. `smoke-test.mjs`
+gained a regression guard that calls the host's own
+`evaluatePluginCompatibility` when available (falling back to an equivalent
+local implementation), so the manifest must stay installable on `0.2.0-rc.2`
+and `0.2.1-rc.2` and rejected on `0.3.0` / `0.1.5`.
+
+The slot/page surface is unchanged from `1.2.2`: `plugins.bundle.config`
 receives only `view: 'page'` (no `form`, so it renders a read-only overview),
 while `plugins.row.config` receives the row's `form` (`state` + `mutate`) and is
-the editable view; both follow `configForms.whileServed`. `@deepseek-ai/dsh-web`
-and `@deepseek-ai/dsh-llm` are ordinary dependencies, so no compatibility gate
-blocks the load; the peer range covers `cordis` / `schemastery` only.
+the editable view; both follow `configForms.whileServed`.
 
-> The `0.2.0-rc.2` client platform packages ship JavaScript without `.d.ts` and
-> no type-declaring copies are published for that line, so the plugin restates
-> the surface it consumes in `src/contracts.d.ts` and `src/client/*.d.ts`
-> (checked against the shipped `lib/*.js`).
+> The `0.2.1-rc.2` client platform packages do ship `.d.ts`; the plugin still
+> declares the surface it consumes in `src/contracts.d.ts` and
+> `src/client/*.d.ts` to keep types stable across runtime lines.
 
 ### Get API Key
 
@@ -217,7 +237,7 @@ console.log(result.sources)
 2. **Google Search only** — Does not support Bing, Baidu, or other search engines
 3. **No generated answers** — Returns search results only, no AI-generated summaries
 4. **API Key required** — Must provide a valid Serper API Key via config, environment, or credential reference
-5. **One DSH line at a time** — `1.2.2` is built for DSH `0.2.0-rc.x`; a different runtime line needs the matching plugin version (see "Compatibility")
+5. **One DSH line at a time** — `1.2.3` supports DSH `0.2.x` (`>=0.2.0-rc.2 <0.3.0-0`); a different runtime line needs the matching plugin version (see "Compatibility")
 
 ---
 

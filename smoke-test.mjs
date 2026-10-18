@@ -202,4 +202,99 @@ for (const specifier of required) {
 }
 assert.ok(required.includes('@deepseek-ai/dsh-client-ui-primitives'), 'primitives come from the module table, not an inline copy')
 
+// ---- DSH 运行时兼容声明（v1.2.3 修复的回归护栏）----
+// DSH 的 dsh-app-boot 决定能否安装的规则：存在 engines.dsh 时只看它，否则逐个
+// 检查 @deepseek-ai/dsh / @deepseek-ai/dsh-* 的 peerDependencies，且用
+// `semver.satisfies(..., { includePrerelease: true })` 判定——因此精确版本
+// `0.2.0-rc.2` 在运行时 `0.2.1-rc.2` 上**不满足**，安装会被直接拒绝（v1.1.1 的
+// 实际故障）。优先调用宿主自己的实现，保证规则随宿主演进；宿主不可用时回退到
+// 语义等价的本地实现。
+const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8').replace(/^\uFEFF/, ''))
+
+assert.equal(
+  manifest.peerDependencies?.['@deepseek-ai/dsh-web'],
+  undefined,
+  'dsh-web must not be a pinned peer: an exact peer version makes DSH reject installs on other runtimes',
+)
+assert.equal(
+  manifest.dependencies?.['@deepseek-ai/dsh-web'],
+  undefined,
+  'dsh-web is provided by the host runtime; vendoring it into dependencies risks a second seam copy',
+)
+assert.equal(typeof manifest.engines?.dsh, 'string', 'engines.dsh is the single source of the DSH compatibility range')
+assert.ok(manifest.engines.dsh.includes('<0.3.0-0'), 'engines.dsh must exclude 0.3.x, whose contract is unverified')
+
+// 最少实现的 semver 版本区间判定（仅供宿主实现缺席时回退使用）。
+function satisfiesFallback(version, range) {
+  const parse = (text) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(text)
+    if (match === null) return null
+    return { major: +match[1], minor: +match[2], patch: +match[3], pre: match[4] === undefined ? [] : match[4].split('.') }
+  }
+  const compare = (a, b) => {
+    for (const key of ['major', 'minor', 'patch']) if (a[key] !== b[key]) return a[key] < b[key] ? -1 : 1
+    if (a.pre.length === 0 || b.pre.length === 0) return a.pre.length === b.pre.length ? 0 : (a.pre.length === 0 ? 1 : -1)
+    for (let i = 0; i < Math.max(a.pre.length, b.pre.length); i++) {
+      const x = a.pre[i]
+      const y = b.pre[i]
+      if (x === undefined) return -1
+      if (y === undefined) return 1
+      const nx = /^\d+$/.test(x)
+      const ny = /^\d+$/.test(y)
+      if (nx && ny && +x !== +y) return +x < +y ? -1 : 1
+      if (nx !== ny) return nx ? -1 : 1
+      if (x !== y) return x < y ? -1 : 1
+    }
+    return 0
+  }
+  const target = parse(version)
+  if (target === null) return false
+  return range.split(/\s+/).filter(Boolean).every((part) => {
+    const operator = /^(>=|<=|>|<|=)?(.*)$/.exec(part)
+    const bound = parse(operator[2])
+    if (bound === null) return false
+    const delta = compare(target, bound)
+    switch (operator[1] ?? '=') {
+      case '>=': return delta >= 0
+      case '<=': return delta <= 0
+      case '>': return delta > 0
+      case '<': return delta < 0
+      default: return delta === 0
+    }
+  })
+}
+
+// 与 dsh-app-boot 的 unmetRequirements 同构；宿主实现可用时直接复用。
+async function unmetRequirements(fields, runtimeVersion) {
+  let appBoot
+  try {
+    appBoot = await import('@deepseek-ai/dsh-app-boot')
+  } catch {
+    appBoot = undefined
+  }
+  if (appBoot?.evaluatePluginCompatibility !== undefined) {
+    const issue = appBoot.evaluatePluginCompatibility(fields, {}, runtimeVersion)
+    return issue === undefined ? {} : issue.requirements
+  }
+  const engines = Object.hasOwn(fields, 'engines') ? fields.engines : {}
+  if (Object.hasOwn(engines, 'dsh')) {
+    return satisfiesFallback(runtimeVersion, engines.dsh) ? {} : { 'engines.dsh': engines.dsh }
+  }
+  const unmet = {}
+  for (const [name, range] of Object.entries(fields.peerDependencies ?? {})) {
+    if (name !== '@deepseek-ai/dsh' && !name.startsWith('@deepseek-ai/dsh-')) continue
+    if (!satisfiesFallback(runtimeVersion, range)) unmet[name] = range
+  }
+  return unmet
+}
+
+for (const runtime of ['0.2.0-rc.2', '0.2.1-rc.2']) {
+  const unmet = await unmetRequirements(manifest, runtime)
+  assert.deepEqual(unmet, {}, `this manifest must install on dsh ${runtime}, got ${JSON.stringify(unmet)}`)
+}
+for (const runtime of ['0.3.0', '0.1.5']) {
+  const unmet = await unmetRequirements(manifest, runtime)
+  assert.ok(Object.keys(unmet).length > 0, `dsh ${runtime} is outside the verified contract and must be rejected`)
+}
+
 console.log('OK all serper plugin contract checks passed')
