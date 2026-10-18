@@ -189,7 +189,17 @@ function SerperSettingsForm(props: {
     return () => { next.model.dispose() }
   }, [props.form])
 
-  const state = page.model.shell()
+  // 必须真正订阅 store：SettingsFormModel 的 publish() 只把新状态推给
+  // `bind()` 返回的 SnapshotStore，React 自身并不知道 model 内部已变化。
+  // 仅读 page.model.shell() 而不订阅，会让输入框成为「受控但永远回弹为空」
+  // 的组件——用户每次按键都会被下一次渲染重置，表现为完全无法输入。
+  const subscribed = React.useSyncExternalStore(
+    page.store.subscribe,
+    page.store.getSnapshot,
+    page.store.getSnapshot,
+  )
+
+  const state = subscribed
   const actions = page.model.actions()
 
   if (!state.available) {
@@ -199,7 +209,7 @@ function SerperSettingsForm(props: {
   return (
     <SettingsForm
       labels={props.labels}
-      state={state}
+      state={subscribed}
       onSave={actions.save}
       onDiscard={actions.discard}
     >
