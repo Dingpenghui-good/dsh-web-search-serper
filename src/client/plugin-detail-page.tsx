@@ -145,11 +145,12 @@ export function SerperSearchDetailPage(props: SerperSearchDetailPageProps) {
 
   // 插件页（bundle 配置区）不带 form：只读快照，指引到行的配置页。
   if (form === undefined) {
-    const value = form?.state.value
-    const section = value !== null && typeof value === 'object' ? value as Record<string, unknown> : {}
+    // 插件页拿不到行配置表单，因此没有可信的来源可展示；此处保持为空快照，
+    // 由下方 readOnlyHint 明确指引用户到「行配置页」编辑。
+    const section: Record<string, unknown> = {}
     return (
       <div className={css.page}>
-        <div className={css.hint}>{t('page.readOnlyHint')}</div>
+        <div className={css.hint} role="note">{t('page.readOnlyHint')}</div>
         {SERPER_SETTINGS_FIELDS.map((field: SerperFieldDescriptor) => (
           <div className={css.field} key={field.key}>
             <div className={css.fieldText}>
@@ -159,10 +160,12 @@ export function SerperSearchDetailPage(props: SerperSearchDetailPageProps) {
             <input
               className={field.numeric ? css.inputSmall : css.input}
               type={field.secret ? 'password' : 'text'}
+              // 占位符在此处会伪装成「已填值」，对 secret 字段尤其误导（用户会
+              // 以为 key 已配置）。只读视图一律不显示占位文案。
               value={displayValue(section[field.key])}
-              placeholder={field.placeholder}
               readOnly
               disabled
+              aria-disabled
             />
           </div>
         ))}
