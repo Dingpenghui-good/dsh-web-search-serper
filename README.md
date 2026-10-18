@@ -126,6 +126,55 @@ whose `volatile()` fields arrive as `{ get(): value }` wrappers, unwrapped the
 same way the Host's own `plainConfig` does — applies to the next search without
 restarting the Host.
 
+### Troubleshooting: installed and configured, yet searches still bypass Serper
+
+This is the easiest trap with this plugin, and it is not the plugin's fault — it
+is about *when* DSH reads configuration.
+
+**A profile's `cordis.patch.yml` is read exactly once, at DSH process startup.**
+If you install the plugin, or repoint `web.searchProvider` to `serper`, while
+DSH is already running, the current process will **not** reload the plugin
+layer. The plugin sits in a "installed, configured, but not in effect" state,
+and searches quietly keep using the built-in backend — **with no error at all**.
+
+Diagnostic order (every step is logged as of v1.2.7):
+
+1. **Restart DSH after any change.** This is the most common cause.
+2. Look for this line in the Host log (proof the plugin layer loaded):
+   ```
+   web-search-serper: registered search provider "serper" (key source: credential)
+   ```
+   Missing → the plugin layer did not load; go back to step 1.
+3. These warnings mean the plugin loaded but **will not be called**:
+   ```
+   web-search-serper: web.searchProvider is "deepseek-official", not "serper" —
+   this plugin is loaded but will not be used until the web row selects it
+
+   web-search-serper: the web row does not declare searchProvider —
+   this plugin is registered but the seam will not route searches to it
+   ```
+   The first means the `web` row was not taken over (see "taking over search"
+   above); the second means the setting is absent.
+4. A fallback warning means Serper failed and another backend answered:
+   ```
+   web-search-serper: fell back to "deepseek-official" — serper failed: <reason>
+   ```
+   Typical causes: invalid or exhausted key (401/403), quota (429), no network.
+5. Read the state programmatically (Host side):
+   ```js
+   import { readRuntimeStatus } from '@dingpenghui/dsh-web-search-serper'
+   readRuntimeStatus()
+   // { registered: true, calls: 12, serperHits: 12, fallbacks: 0,
+   //   last: { outcome: 'serper-ok', servedBy: 'serper', keySource: 'credential', ... } }
+   ```
+   `registered: false` or `calls: 0` map to the issues in steps 2 and 3.
+   The snapshot **never contains the key itself**, only `keySource`
+   (`config` / `env` / `credential` / `missing`), so you can tell "I thought I
+   configured a key" apart from what was actually resolved.
+
+> One line: **after installing or changing configuration, restart DSH — then
+> confirm it is alive via the `registered search provider` log line.**
+
 ### Compatibility
 
 | DSH runtime | Plugin version |

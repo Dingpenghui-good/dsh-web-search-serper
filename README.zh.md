@@ -119,6 +119,51 @@ Host 实际在 serve 的 settings 命名空间：命名空间被 serve 时才出
 `{ get(): value }` 包装返回，插件按宿主 `plainConfig` 同样的方式解包），
 保存后的值对下一次搜索立即生效，**无需重启宿主**。
 
+### 排障：装了、配了，为什么搜索还是不走 Serper？
+
+这是本插件最容易踩的坑，坑不在插件本身，而在 DSH 的配置加载时机。
+
+**`profile` 的 `cordis.patch.yml` 只在 DSH 进程启动时读取一次。**
+如果在 DSH 已经运行时才安装插件、或才把 `web.searchProvider` 改成 `serper`，
+当前进程**不会**重新加载插件层——插件处于「装好了、也配置了，但没生效」的状态，
+而搜索会安静地继续走 DSH 内置后端，**不会报任何错**。
+
+判断顺序（v1.2.7 起每步都有日志可查）：
+
+1. **改动后必须重启 DSH**。这是最常见的原因。
+2. 看宿主日志里有没有这一行（说明插件层确实加载了）：
+   ```
+   web-search-serper: registered search provider "serper" (key source: credential)
+   ```
+   没有这行 → 插件层没加载，回到第 1 步。
+3. 若出现下面两种警告，说明插件加载了但**不会被调用**：
+   ```
+   web-search-serper: web.searchProvider is "deepseek-official", not "serper" —
+   this plugin is loaded but will not be used until the web row selects it
+
+   web-search-serper: the web row does not declare searchProvider —
+   this plugin is registered but the seam will not route searches to it
+   ```
+   前者是 `web` 行没接管（见上文「接管搜索」），后者是配置里没有这一项。
+4. 若出现降级警告，说明 Serper 侧失败了、结果是别的后端给的：
+   ```
+   web-search-serper: fell back to "deepseek-official" — serper failed: <原因>
+   ```
+   常见原因：key 无效/欠费（401/403）、超配额（429）、网络不通。
+5. 编程方式读取状态（Host 侧）：
+   ```js
+   import { readRuntimeStatus } from '@dingpenghui/dsh-web-search-serper'
+   readRuntimeStatus()
+   // { registered: true, calls: 12, serperHits: 12, fallbacks: 0,
+   //   last: { outcome: 'serper-ok', servedBy: 'serper', keySource: 'credential', ... } }
+   ```
+   `registered: false` 或 `calls: 0` 分别对应上面第 2 步与第 3 步的问题。
+   该快照**不含 key 值**，只有 `keySource`（`config` / `env` / `credential` / `missing`），
+   用于区分「我以为配了 key，其实读到的是另一个来源」。
+
+> 一句话版本：**安装或改配置之后，重启 DSH；然后用日志里的
+> `registered search provider` 那一行确认它真的活了。**
+
 ### 兼容性
 
 | DSH 运行时 | 插件版本 |

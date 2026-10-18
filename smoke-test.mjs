@@ -297,4 +297,33 @@ for (const runtime of ['0.3.0', '0.1.5']) {
   assert.ok(Object.keys(unmet).length > 0, `dsh ${runtime} is outside the verified contract and must be rejected`)
 }
 
+// ---- 可观测性回归护栏（v1.2.7）----
+// 实战教训：插件「装了、配了」不等于「生效了」。profile 的 cordis.patch.yml 只在
+// 进程启动时读取，改完不重启则该插件层不会被加载；而 provider 被 seam 静默接管，
+// 调用方无从判断一次搜索究竟走了 serper 还是内置后端。因此要求：
+//   1. apply 之后能通过 readRuntimeStatus() 读到 registered=true；
+//   2. 搜索一次后 calls 增加，且能区分 key 来源；
+//   3. 未注册（未调用 apply）时状态必须是干净的未注册形态。
+assert.equal(typeof mod.readRuntimeStatus, 'function', 'readRuntimeStatus exported')
+
+const freshStatus = mod.readRuntimeStatus()
+assert.equal(freshStatus.registered, true, 'apply() marks the tracker registered')
+assert.ok(freshStatus.calls >= 1, 'at least one search was recorded during this run')
+assert.ok(
+  ['config', 'env', 'credential', 'missing'].includes(freshStatus.last?.keySource),
+  `key source must be one of the known enums, got ${String(freshStatus.last?.keySource)}`,
+)
+assert.ok(
+  ['serper-ok', 'fallback-ok', 'failed', 'aborted'].includes(freshStatus.last?.outcome),
+  `last outcome must be a known enum, got ${String(freshStatus.last?.outcome)}`,
+)
+// 状态快照不得泄漏 key 本身。
+assert.ok(!JSON.stringify(freshStatus).includes('secret-key-123'), 'status snapshot must not leak the api key')
+
+// 状态在独立进程中初始为未注册（模拟「插件层没被加载」）。
+const isolated = await import(`${pathToFileURL(libIndex).href}?isolated=${Date.now()}`)
+const untouched = isolated.readRuntimeStatus()
+assert.equal(untouched.registered, false, 'a fresh module instance reports registered=false before apply()')
+assert.equal(untouched.calls, 0, 'a fresh module instance reports zero calls')
+
 console.log('OK all serper plugin contract checks passed')

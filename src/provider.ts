@@ -23,6 +23,7 @@ import type {
   WebSearchSource,
 } from '@deepseek-ai/dsh-web'
 import type { SerperOrganicResult, SerperSearchResponse } from './types.ts'
+import { SerperStatusTracker, type SerperKeySource } from './status.ts'
 
 /**
  * 插件抛出的 web 错误。
@@ -70,10 +71,19 @@ export interface SerperSearchProviderOptions {
    */
   resolveKey?: () => Promise<string | undefined>
   /**
+   * key 来源的惰性解析器（不影响取 key 本身，只用于诊断展示）。
+   *
+   * 排查「明明配了 key 却没生效」时，需要区分 key 来自 config / 环境变量 /
+   * 凭证库；`resolveKey` 只返回值，无法区分来源，因此单独提供。
+   */
+  resolveKeySource?: () => SerperKeySource
+  /**
    * 端点选项惰性访问器：每次搜索时求值 baseURL / gl / cr / numResults。
    * 缺省时 baseURL 用默认端点，无地区与数量默认。
    */
   baseURLOptions?: () => RequestOptions
+  /** 运行时状态追踪器；缺省时不记录（便于单测与最小集成）。 */
+  status?: SerperStatusTracker
   /**
    * 降级目标解析器：Serper 侧不可用时改用的另一个搜索 provider。
    *
@@ -159,18 +169,73 @@ export class SerperSearchProvider implements WebSearchProvider {
    * 抛回 Serper 的原始错误以保留诊断信息。
    */
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
+    const started = Date.now()
+    const keySource: SerperKeySource = this.safeKeySource()
     try {
-      return await this.searchDirect(request, signal)
+      const result = await this.searchDirect(request, signal)
+      this.options.status?.record({
+        outcome: 'serper-ok',
+        servedBy: this.id,
+        at: started,
+        durationMs: Date.now() - started,
+        keySource,
+      })
+      return result
     } catch (error: unknown) {
       // 取消不降级：searchDirect 已把 fetch 的 AbortError 包装成 WEB_ABORTED，
       // 因此这里必须同时认「原生 AbortError」和「已包装的 WEB_ABORTED」。
-      if (isCancellation(error)) throw error
+      if (isCancellation(error)) {
+        this.options.status?.record({
+          outcome: 'aborted',
+          servedBy: this.id,
+          at: started,
+          durationMs: Date.now() - started,
+          keySource,
+        })
+        throw error
+      }
       const fallback = safeFallback(this.options)
-      if (fallback === undefined || fallback === this || !fallback.available()) throw error
+      if (fallback === undefined || fallback === this || !fallback.available()) {
+        this.options.status?.record({
+          outcome: 'failed',
+          servedBy: this.id,
+          at: started,
+          durationMs: Date.now() - started,
+          keySource,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        throw error
+      }
       try {
-        return await fallback.search(request, signal)
+        const result = await fallback.search(request, signal)
+        this.options.status?.record({
+          outcome: 'fallback-ok',
+          servedBy: fallback.id,
+          at: started,
+          durationMs: Date.now() - started,
+          keySource,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return result
       } catch (fallbackError: unknown) {
-        if (isCancellation(fallbackError)) throw fallbackError
+        if (isCancellation(fallbackError)) {
+          this.options.status?.record({
+            outcome: 'aborted',
+            servedBy: this.id,
+            at: started,
+            durationMs: Date.now() - started,
+            keySource,
+          })
+          throw fallbackError
+        }
+        this.options.status?.record({
+          outcome: 'failed',
+          servedBy: this.id,
+          at: started,
+          durationMs: Date.now() - started,
+          keySource,
+          error: error instanceof Error ? error.message : String(error),
+        })
         // 两侧都失败：以 Serper 的错误为主体上抛，把降级失败挂进 cause，
         // 避免「主后端先失败」这一关键事实在诊断信息里消失。
         if (fallbackError instanceof Error) {
@@ -183,6 +248,15 @@ export class SerperSearchProvider implements WebSearchProvider {
         }
         throw error
       }
+    }
+  }
+
+  /** 读取 key 来源，且绝不让诊断逻辑影响主流程。 */
+  private safeKeySource(): SerperKeySource {
+    try {
+      return this.options.resolveKeySource?.() ?? 'missing'
+    } catch {
+      return 'missing'
     }
   }
 

@@ -35,6 +35,9 @@ export type {
   SerperRelatedQuestion,
   SerperError,
 } from './types.ts'
+import { SerperStatusTracker, type SerperKeySource, type SerperRuntimeStatus } from './status.ts'
+
+export type { SerperRuntimeStatus, SerperLastSearch, SerperKeySource } from './status.ts'
 
 /** Cordis 插件名（用于 loader 诊断） */
 export const name = 'web-search-serper'
@@ -90,6 +93,13 @@ interface WebRegistryFace {
   searchProviders?: Map<string, WebSearchProvider>
 }
 
+/** `ctx.logger` 的最小面向：宿主未提供时全部可选，缺失即不记录。 */
+interface LoggerFace {
+  debug?(message: string, ...args: unknown[]): void
+  warn?(message: string, ...args: unknown[]): void
+  error?(message: string, ...args: unknown[]): void
+}
+
 /**
  * 读一个 config 字段的普通值。
  *
@@ -122,6 +132,9 @@ function plain(value: unknown): unknown {
  * （credentials 服务热解析）并重读当前 config 行，改动保存后对后续请求即时生效。
  */
 export function apply(ctx: Context): void {
+  /** 宿主 logger（可选）：用于留痕「是否真的生效」。 */
+  const logger = (ctx as unknown as { logger?: LoggerFace }).logger
+
   /** 当前行 config：按 entry id 在 `ctx.settings.describe()` 中查找；
    *  未组合 settings 服务时 undefined，走纯环境变量回退。 */
   const readConfig = (): Record<string, unknown> | undefined => {
@@ -162,6 +175,28 @@ export function apply(ctx: Context): void {
     }
   }
 
+  /** 仅用于诊断：报告 key 的实际来源，不返回值本身。 */
+  const resolveKeySource = (): SerperKeySource => {
+    if (str(readConfig()?.apiKey) !== undefined) return 'config'
+    const fromEnv = process.env.SERPER_API_KEY
+    if (typeof fromEnv === 'string' && fromEnv.length > 0) return 'env'
+    return ctx.get('credentials') === undefined ? 'missing' : 'credential'
+  }
+
+  /** 插件运行状态：设置页据此判断「是否真的在生效」。 */
+  const status = runtimeStatus
+  // 降级 / 失败写日志：这是用户唯一能看出「Serper 没在工作」的途径。
+  status.setHooks(
+    (servedBy, reason) => {
+      logger?.warn?.(
+        `web-search-serper: fell back to "${servedBy}" — serper failed: ${reason}`,
+      )
+    },
+    (reason) => {
+      logger?.error?.(`web-search-serper: search failed and no usable fallback — ${reason}`)
+    },
+  )
+
   /** 降级目标：seam 注册表里除本插件外、第一个可用的搜索 provider
    *  （通常是 dsh-base 自带的 `deepseek-official`）。web seam 自身不做回退，
    *  因此这里直接读 seam 的注册表，在插件内完成降级。
@@ -183,7 +218,9 @@ export function apply(ctx: Context): void {
   const provider = new SerperSearchProvider({
     // key / 端点全部惰性（每次搜索时读取）：保存新 config 后对后续请求生效
     resolveKey,
+    resolveKeySource,
     resolveFallback,
+    status,
     baseURLOptions: () => {
       const cfg = readConfig()
       const baseURL = str(cfg?.baseURL)
@@ -200,4 +237,57 @@ export function apply(ctx: Context): void {
   })
 
   ctx.web.registerSearchProvider(provider)
+  status.markRegistered()
+
+  // 注册成功即留痕：这是「插件是否真的在本进程生效」的唯一证据。
+  // 未重启而改了 cordis.patch.yml 时，这里不会出现在日志里——正是排障入口。
+  logger?.debug?.(
+    `web-search-serper: registered search provider "serper" (key source: ${resolveKeySource()})`,
+  )
+  const declared = declaredSearchProvider()
+  if (declared !== undefined && declared !== SERPER_PROVIDER_ID) {
+    // 插件已注册，但 web seam 指向别的 provider：本插件不会被调用。
+    logger?.warn?.(
+      `web-search-serper: web.searchProvider is "${declared}", not "${SERPER_PROVIDER_ID}" — `
+      + 'this plugin is loaded but will not be used until the web row selects it',
+    )
+  } else if (declared === undefined) {
+    logger?.warn?.(
+      'web-search-serper: the web row does not declare searchProvider — '
+      + 'this plugin is registered but the seam will not route searches to it',
+    )
+  }
+
+  /** 读取 dsh-base 的 web 行声明的 searchProvider（用于判断是否真的被选中）。 */
+  function declaredSearchProvider(): string | undefined {
+    const settings = ctx.get('settings') as SettingsReadFace | undefined
+    if (settings === undefined) return undefined
+    try {
+      const row = settings.describe().find((r) => r.ns === 'web')
+      const value = plain(row?.value)
+      if (value === null || typeof value !== 'object') return undefined
+      return str((value as Record<string, unknown>).searchProvider)
+    } catch {
+      return undefined
+    }
+  }
+}
+
+/**
+ * 模块级状态追踪器：跨插件重载保留，且可在不持有 ctx 的情况下读取，
+ * 便于诊断工具直接取用。降级 / 失败同时写入宿主日志（见 apply）。
+ */
+const runtimeStatus = new SerperStatusTracker()
+
+/**
+ * 读取本插件在当前进程内的运行状态。
+ *
+ * 供排障使用：若 `registered` 为 false，说明插件层根本没有被加载
+ * （最常见原因是改了 profile 的 `cordis.patch.yml` 后没有重启 DSH——
+ * 该文件只在进程启动时读取一次）；若 `calls` 为 0，说明插件虽已加载但
+ * 尚未被寻址（`web.searchProvider` 未指向 `serper`，或从未发起搜索）。
+ * @returns 状态快照（只读，不含 key 值）。
+ */
+export function readRuntimeStatus(): SerperRuntimeStatus {
+  return runtimeStatus.snapshot()
 }
