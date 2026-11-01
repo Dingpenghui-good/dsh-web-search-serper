@@ -20,7 +20,7 @@ Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 
 - 🌍 **多语言支持** — 支持全球多个国家/地区的搜索结果
 - 🔧 **装好即生效** — 安装后由插件自己在运行时接管 `web.searchProvider`，**无需改任何配置、无需重启**；key 每次搜索惰性解析（config → 环境变量 → 凭证库），改动同样无需重启
 - 🛟 **失败自动降级** — Serper 不可用时自动回退到其它可用搜索提供方，不会让 `web_search` 整体失效
-- ⚙️ **插件页内的设置界面** — 在「插件」列表点插件名（或行上的「配置」）即可编辑 Key、端点、`gl` / `cr` 与默认结果数量；保存后对下一次搜索即时生效，无需重启
+- ⚙️ **插件页内的设置界面** — 在「插件」列表点插件名（或行上的「配置」）即可编辑 API Key；保存后对下一次搜索即时生效，无需重启。**只有这一个设置项**，检索行为本身不需要调参
 - 🔁 **配置热读取** — 每次搜索都重读行 config（含 `ctx.settings.describe()` 中以 `volatile()` 包装返回的值），所以在别处改动凭证或选项同样立即生效
 
 ---
@@ -91,15 +91,20 @@ API key 无需配置即可工作，每次搜索时按以下顺序惰性解析：
 3. DSH 凭证库中的 `SERPER_API_KEY` 引用
    （`$DSH_HOME/.credentials.yaml` 的 `refs:` —— 每次搜索实时解析，改动无需重启）。
 
-在 composition 中固定 key 与选项：
+在 composition 中固定 key（**唯一的可配置项**）：
 
 ```yaml
 - id: web-search-serper
   name: '@dingpenghui/dsh-web-search-serper'
   config:
     apiKey: your-serper-api-key
-    gl: cn  # 可选：设置默认国家代码
 ```
+
+> **刻意没有其它设置。** 旧版曾暴露 `gl` / `cr` / `numResults` / `baseURL`，
+> 但它们只会让检索在用户无感知的情况下变样——比如 `gl: cn` 会让英文技术查询
+> 返回中文站点，`numResults` 会覆盖宿主工具下发的条数。现在这些开关已移除：
+> 端点固定为 Serper 官方端点，条数由宿主 `web_search` 工具决定，区域跟随
+> Serper 默认。老 profile 里残留的这些值会被忽略，不影响检索。
 
 ### 运行行为：优先 Serper，失败自动降级
 
@@ -127,9 +132,9 @@ Client 半边把插件自己的配置页注册进「插件」页声明的两个 
 Host 实际在 serve 的 settings 命名空间：命名空间被 serve 时才出现，不再
 被 serve 时自动撤下。
 
-可编辑项：API Key、端点基址、`gl`、`cr`、默认结果数量。在 `0.2.x` 上：
-插件页（`plugins.bundle.config`）只承担只读概览，真正的编辑与保存发生在行的
-「配置」页（`plugins.row.config`），经宿主设置表单写入插件行 config。
+可编辑项：**仅 API Key**。在 `0.2.x` 上：插件页（`plugins.bundle.config`）只承担
+只读概览，真正的编辑与保存发生在行的「配置」页（`plugins.row.config`），经宿主
+设置表单写入插件行 config。
 
 由于每次搜索都会重读 `ctx.settings.describe()`（`volatile()` 字段在其中以
 `{ get(): value }` 包装返回，插件按宿主 `plainConfig` 同样的方式解包），

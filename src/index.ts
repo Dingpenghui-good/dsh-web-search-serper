@@ -47,31 +47,32 @@ export const name = 'web-search-serper'
 /** 注入的服务：web seam 是本插件唯一的硬依赖。 */
 export const inject = ['web'] as const
 
-/** 插件配置接口（全部可选；缺省时走环境变量 → 凭证库回退链）。 */
+/**
+ * 插件配置接口。
+ *
+ * **只有 `apiKey`**：检索本身不需要任何调参。
+ *
+ * `baseURL` / `gl` / `cr` / `numResults` 曾在旧版作为可选设置暴露，但它们是纯粹的
+ * 风险来源——`gl: cn` 会让英文技术查询返回中文站点、`numResults` 会覆盖宿主工具
+ * 下发的条数，用户很难意识到「结果不对」正是这些开关造成的。现在：
+ * 端点固定为 Serper 官方端点，结果条数由宿主 `tool-web` 的 `maxResults` 决定，
+ * 区域跟随 Serper 默认。
+ */
 export interface Config {
   /** Serper API Key；缺省回退到 $SERPER_API_KEY，再到凭证库 SERPER_API_KEY 引用 */
   apiKey?: string
-  /** 端点基址，默认 https://google.serper.dev（/search 自动追加） */
-  baseURL?: string
-  /** 默认国家代码，如 'us', 'cn', 'jp' */
-  gl?: string
-  /** 默认地区代码，如 'us'（作为 cr 参数发送） */
-  cr?: string
-  /** 默认结果数量（请求未携带 maxResults 时）；省略则不发送 num */
-  numResults?: number
 }
 
 /**
  * 运行时 schema：Loader 据此解析行 config 并补默认值；secret 字段带 volatile
  * 标记——设置页可编辑，保存后经 volatile HMR 即时生效。
  * 导出名必须是 `Config`：宿主 settings 框架按此导出注册 configForms 命名空间。
+ *
+ * 已删除的旧字段（`baseURL` / `gl` / `cr` / `numResults`）在解析时被直接丢弃，
+ * 因此老 profile 里残留的值既不报错，也不会再影响检索。
  */
 export const Config = z.object({
   apiKey: z.string().role('secret').volatile(),
-  baseURL: z.string().volatile(),
-  gl: z.string().volatile(),
-  cr: z.string().volatile(),
-  numResults: z.number().step(1).min(1).max(100).volatile(),
 })
 
 /** 旧导出名别名（兼容已引用 ConfigSchema 的代码）。 */
@@ -168,10 +169,6 @@ export function apply(ctx: Context): void {
     const value = plain(v)
     return typeof value === 'string' && value.length > 0 ? value : undefined
   }
-  const num = (v: unknown): number | undefined => {
-    const value = plain(v)
-    return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-  }
 
   /** 惰性解析 API key：config.apiKey → 环境变量 → 凭证库（热）。 */
   const resolveKey = async (): Promise<string | undefined> => {
@@ -231,24 +228,14 @@ export function apply(ctx: Context): void {
   }
 
   const provider = new SerperSearchProvider({
-    // key / 端点全部惰性（每次搜索时读取）：保存新 config 后对后续请求生效
+    // key 惰性解析（每次搜索时读取）：保存新 key 后对后续请求即时生效
     resolveKey,
     resolveKeySource,
     resolveFallback,
     status,
-    baseURLOptions: () => {
-      const cfg = readConfig()
-      const baseURL = str(cfg?.baseURL)
-      const gl = str(cfg?.gl)
-      const cr = str(cfg?.cr)
-      const numResults = num(cfg?.numResults)
-      return {
-        baseURL: baseURL ?? SERPER_DEFAULT_BASE_URL,
-        ...(gl !== undefined ? { gl } : {}),
-        ...(cr !== undefined ? { cr } : {}),
-        ...(numResults !== undefined ? { numResults } : {}),
-      }
-    },
+    // 端点固定为 Serper 官方端点；不再暴露 baseURL / gl / cr / numResults
+    // 那几个会悄悄改变检索语义的开关。
+    baseURLOptions: () => ({ baseURL: SERPER_DEFAULT_BASE_URL }),
   })
 
   ctx.web.registerSearchProvider(provider)

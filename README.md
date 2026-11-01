@@ -20,7 +20,7 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 - 🌍 **Multi-language Support** — Results from countries/regions worldwide
 - 🔧 **Works Right After Install** — the plugin claims `web.searchProvider` at runtime, so **no config edits and no restart** are needed; key resolved lazily per search (config → env → credential store), also without a restart
 - 🛟 **Automatic Fallback** — when Serper is unavailable it hands the request to another usable search provider instead of breaking `web_search` entirely
-- ⚙️ **Settings Page on the Plugins Page** — the plugin's own page (opened from its name in the Plugins list, or from the row's configure control) edits the key, endpoint, `gl`/`cr` and default result count; saved values apply to the next search without a restart
+- ⚙️ **Settings Page on the Plugins Page** — the plugin's own page (opened from its name in the Plugins list, or from the row's configure control) edits the API key; saved values apply to the next search without a restart. **That is the only setting** — retrieval itself needs no tuning
 - 🔁 **Hot Configuration** — every search re-reads the row config (including `volatile()`-wrapped values from `ctx.settings.describe()`), so credentials and options changed elsewhere are picked up immediately
 
 ---
@@ -102,8 +102,15 @@ To pin the key and options in the composition instead:
   name: '@dingpenghui/dsh-web-search-serper'
   config:
     apiKey: your-serper-api-key
-    gl: cn  # Optional: set default country code
 ```
+
+> **Deliberately nothing else is configurable.** Earlier versions also exposed
+> `gl` / `cr` / `numResults` / `baseURL`, but those only made results change
+> without the user noticing — `gl: cn`, for instance, returns Chinese sites for
+> English technical queries, and `numResults` overrode the count the host tool
+> asked for. They are gone: the endpoint is pinned to Serper's official one, the
+> result count comes from the host `web_search` tool, and region follows Serper's
+> default. Values left over in an old profile are ignored.
 
 ### Behavior: Serper first, automatic fallback
 
@@ -136,8 +143,7 @@ otherwise.
 On `0.2.x` the two slots render differently: the bundle page passes no
 `form`, so it shows a read-only overview that points at the row's configure
 page; the row page passes the row's `form` (`state` + `mutate`), which is where
-the settings are edited and saved (API key, endpoint base URL, `gl`, `cr`,
-default result count) through the Host's settings form.
+the settings are edited and saved (**API key only**) through the Host's settings form.
 
 Because every search re-reads `ctx.settings.describe()`, a saved row config —
 whose `volatile()` fields arrive as `{ get(): value }` wrappers, unwrapped the

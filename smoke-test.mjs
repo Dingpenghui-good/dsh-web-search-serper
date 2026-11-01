@@ -39,15 +39,23 @@ const unwrap = (value) => (value !== null && typeof value === 'object' && typeof
 
 const [out] = z.resolve({}, mod.Config)
 assert.ok(out && typeof out === 'object', 'empty config resolves to an object')
-const [out2] = z.resolve({ apiKey: 'k', gl: 'cn', numResults: 5 }, mod.Config)
+const [out2] = z.resolve({ apiKey: 'k' }, mod.Config)
 assert.equal(unwrap(out2.apiKey), 'k')
-assert.equal(unwrap(out2.gl), 'cn')
-assert.equal(unwrap(out2.numResults), 5)
-assert.throws(
-  () => z.resolve({ numResults: 500 }, mod.Config),
-  /numResults/,
-  'numResults above 100 is rejected by the schema',
-)
+
+// 精简护栏：检索行为不该需要调参。
+//
+// 实测表明 schemastery 的 `resolve` 会**原样保留**未声明字段
+// （`{apiKey, gl, numResults}` → 四个键全在），因此「从 schema 删字段」本身
+// 不足以让老 profile 里的残留值失效。真正的保证是：插件只读 `apiKey`，
+// 残留的 gl / cr / numResults / baseURL 不会被写进任何请求。下面的断言直接
+// 用一份「脏 config」跑真实搜索，检查请求体里不含这些参数。
+{
+  const [legacy] = z.resolve(
+    { apiKey: 'k', baseURL: 'https://evil.example', gl: 'cn', cr: 'us', numResults: 500 },
+    mod.Config,
+  )
+  assert.equal(unwrap(legacy.apiKey), 'k', 'apiKey survives')
+}
 
 // 注册面：最小 Context（只提供本插件用到的 web / settings / credentials）。
 // `web.config.searchProvider` 按 real seam 的 volatile 语义建模：`get()` 读当前值，
@@ -181,17 +189,27 @@ const server = createServer((req, res) => {
 })
 await new Promise((done) => server.listen(0, '127.0.0.1', done))
 const port = server.address().port
+
+// 端点现在固定为 Serper 官方地址，所以这里把全局 fetch 重定向到本地回环服务器
+// 的 mock：既保证测试不消耗真实配额，又能断言「实际发出的请求长什么样」。
+const realFetch = globalThis.fetch
+globalThis.fetch = (input, init) => {
+  const url = typeof input === 'string' ? input : String(input?.url ?? input)
+  return realFetch(url.replace(/^https:\/\/google\.serper\.dev/, `http://127.0.0.1:${port}`), init)
+}
 try {
-  rowConfig = { apiKey: 'test-key', baseURL: `http://127.0.0.1:${port}/`, gl: 'cn', numResults: 3 }
-  const result = await provider2.search({ query: 'dsh serper' })
-  assert.deepEqual(result.sources, [
-    { url: 'https://a.example/', title: 'A', snippet: 'first' },
-    { url: 'https://b.example/', title: 'B' },
-  ], 'organic results map to sources; link-less entries drop')
-  assert.equal(result.truncated, false)
-  assert.equal(seen.url, '/search', 'endpoint joins without a double slash')
+  // 精简护栏：端点固定为 Serper 官方端点，行 config 里的 baseURL / gl / cr /
+  // numResults 一律不得生效。这里故意塞一份「脏 config」，断言请求体只剩 q。
+  rowConfig = { apiKey: 'test-key', baseURL: 'https://evil.example', gl: 'cn', cr: 'us', numResults: 3 }
+  const dirty = await provider2.search({ query: 'dirty config' })
+  assert.deepEqual(seen.url, '/search', 'endpoint stays fixed')
   assert.equal(seen.key, 'test-key', 'X-Api-Key header carries the resolved key')
-  assert.deepEqual(seen.body, { q: 'dsh serper', gl: 'cn', num: 3 }, 'request body carries gl/num')
+  assert.deepEqual(
+    seen.body,
+    { q: 'dirty config' },
+    'legacy baseURL/gl/cr/numResults are ignored; body carries q only',
+  )
+  assert.deepEqual(dirty.sources.map((s) => s.url), ['https://a.example/', 'https://b.example/'])
 
   // 429：Serper 侧失败 → 回退到另一注册 provider
   const degraded = await provider2.search({ query: 'rate limited' })
@@ -210,11 +228,11 @@ try {
 
   // volatile 包装形态的 config 同样被解包（宿主 describe() 的真实形态）
   wrapped = true
-  rowConfig = { apiKey: 'wrapped-key', baseURL: `http://127.0.0.1:${port}`, numResults: 7 }
+  rowConfig = { apiKey: 'wrapped-key' }
   const wrappedResult = await provider2.search({ query: 'volatile config' })
   assert.equal(wrappedResult.sources.length, 2, 'volatile-wrapped config still searches')
   assert.equal(seen.key, 'wrapped-key', 'volatile apiKey unwraps')
-  assert.deepEqual(seen.body, { q: 'volatile config', num: 7 }, 'volatile numResults unwraps')
+  assert.deepEqual(seen.body, { q: 'volatile config' }, 'request body stays q-only')
   wrapped = false
 
   // 无 key → WEB_PROVIDER_CONFIGURED_UNAVAILABLE，并降级
@@ -223,6 +241,8 @@ try {
   const noKey = await provider2.search({ query: 'fallback please' })
   assert.deepEqual(noKey.sources.map((s) => s.url), ['https://fallback.example/'], 'missing key still degrades')
 } finally {
+  // 无论断言是否失败，都要还原 fetch 与关闭 server，避免污染后续断言。
+  globalThis.fetch = realFetch
   await new Promise((done) => server.close(done))
 }
 

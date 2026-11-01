@@ -62,21 +62,6 @@ function textSpec(field: string): SettingsFieldSpec {
   }
 }
 
-/** numResults：1–100 的整数，空串清除。 */
-function numberSpec(field: string): SettingsFieldSpec {
-  return {
-    field,
-    format: (value) => (typeof value === 'number' ? String(value) : ''),
-    parse: (text) => {
-      const trimmed = text.trim()
-      if (trimmed === '') return { kind: 'clear' }
-      const parsed = Number(trimmed)
-      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100 || !Number.isInteger(parsed)) return undefined
-      return { kind: 'set', value: parsed }
-    },
-  }
-}
-
 /** 把行配置页传进来的 `form` 适配成 `SettingsFormModel` 的 scope。 */
 function asScope(form: SerperPageForm): SettingsFormScope<SerperSearchSettings> {
   const snapshot = () => {
@@ -99,10 +84,9 @@ function asScope(form: SerperPageForm): SettingsFormScope<SerperSearchSettings> 
   }
 }
 
-/** 创建一次页面状态的 staged 表单。 */
+/** 创建一次页面状态的 staged 表单（目前只有 apiKey 一个字段）。 */
 function createPage(form: SerperPageForm) {
-  const specs: SettingsFieldSpec[] = SERPER_SETTINGS_FIELDS.map((field) =>
-    field.key === 'numResults' ? numberSpec(field.key) : textSpec(field.key))
+  const specs: SettingsFieldSpec[] = SERPER_SETTINGS_FIELDS.map((field) => textSpec(field.key))
   const model = new SettingsFormModel<SerperSearchSettings>(asScope(form), specs)
   const project = (): SerperPageState => ({
     ...model.shell(),
