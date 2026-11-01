@@ -49,11 +49,20 @@ assert.throws(
   'numResults above 100 is rejected by the schema',
 )
 
-// 注册面：最小 Context（只提供本插件用到的 web / settings / credentials）
-function makeContext({ searchProviders = new Map(), settings, credentials } = {}) {
+// 注册面：最小 Context（只提供本插件用到的 web / settings / credentials）。
+// `web.config.searchProvider` 按 real seam 的 volatile 语义建模：`get()` 读当前值，
+// `set()` 写入即改变后续 search 的解析结果（seam 在调用时解析，不缓存）。
+function makeContext({ searchProviders = new Map(), settings, credentials, searchProvider } = {}) {
+  let currentSearchProvider = searchProvider
   const services = {
     web: {
       searchProviders,
+      config: {
+        searchProvider: {
+          get: () => currentSearchProvider,
+          set: (id) => { currentSearchProvider = id },
+        },
+      },
       registerSearchProvider(provider) {
         searchProviders.set(provider.id, provider)
         return () => searchProviders.delete(provider.id)
@@ -82,11 +91,56 @@ const fallbackProvider = {
 }
 
 const registry = new Map([['deepseek-official', fallbackProvider]])
-const ctx = makeContext({ searchProviders: registry })
+const ctx = makeContext({ searchProviders: registry, searchProvider: 'deepseek-official' })
 mod.apply(ctx)
 const provider = registry.get('serper')
 assert.ok(provider !== undefined, 'serper provider registered on ctx.web')
 assert.equal(provider.available(), true, 'provider is usable when the key resolves')
+
+// 「装好即生效」护栏：注册后必须由插件自己把 seam 的选择指到 serper，
+// 不依赖 profile 里是否写了 `- id: web`（v1.2.8 之前靠 patch 接管，装完不改配置
+// 就不会被寻址，且不报错）。
+assert.equal(
+  ctx.web.config.searchProvider.get(),
+  'serper',
+  'apply() takes over web.searchProvider without any profile patch',
+)
+
+// 让位护栏：部署方用环境变量显式指定别的 provider 时不得覆盖。
+{
+  const savedEnv = process.env.DSH_WEB_SEARCH_PROVIDER
+  process.env.DSH_WEB_SEARCH_PROVIDER = 'deepseek-official'
+  try {
+    const envCtx = makeContext({ searchProviders: new Map(), searchProvider: 'deepseek-official' })
+    mod.apply(envCtx)
+    assert.equal(
+      envCtx.web.config.searchProvider.get(),
+      'deepseek-official',
+      '$DSH_WEB_SEARCH_PROVIDER wins over takeover',
+    )
+  } finally {
+    if (savedEnv === undefined) delete process.env.DSH_WEB_SEARCH_PROVIDER
+    else process.env.DSH_WEB_SEARCH_PROVIDER = savedEnv
+  }
+}
+
+// 幂等 / 容错护栏：已指向 serper 时保持不动；seam 没有可写 config 时
+// （旧宿主）注册仍须成功，不得抛错。
+{
+  const sameCtx = makeContext({ searchProviders: new Map(), searchProvider: 'serper' })
+  mod.apply(sameCtx)
+  assert.equal(sameCtx.web.config.searchProvider.get(), 'serper', 'takeover is idempotent')
+
+  const bareCtx = {
+    web: {
+      searchProviders: new Map(),
+      registerSearchProvider(p) { this.searchProviders.set(p.id, p); return () => {} },
+    },
+    get(name) { return name === 'web' ? this.web : undefined },
+  }
+  assert.doesNotThrow(() => mod.apply(bareCtx), 'apply() survives a seam without writable config')
+  assert.ok(bareCtx.web.searchProviders.has('serper'), 'provider still registered on a bare seam')
+}
 
 // 行 config 经由 ctx.settings.describe() 惰性读取。volatile 字段在解析值里是
 // { get() } 包装，宿主展示层同样会解包，这里两种形态各测一遍。

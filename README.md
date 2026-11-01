@@ -18,7 +18,7 @@ Serper.dev is an official Google Search partner providing fast, structured Googl
 - 🔒 **Privacy Friendly** — No user tracking, no cookie collection
 - 💰 **Generous Free Tier** — 2,500 monthly queries at no cost
 - 🌍 **Multi-language Support** — Results from countries/regions worldwide
-- 🔧 **Takes Over Out of the Box** — installing it as a bundle claims `web.searchProvider` automatically; key resolved lazily per search (config → env → credential store), no restart on change
+- 🔧 **Works Right After Install** — the plugin claims `web.searchProvider` at runtime, so **no config edits and no restart** are needed; key resolved lazily per search (config → env → credential store), also without a restart
 - 🛟 **Automatic Fallback** — when Serper is unavailable it hands the request to another usable search provider instead of breaking `web_search` entirely
 - ⚙️ **Settings Page on the Plugins Page** — the plugin's own page (opened from its name in the Plugins list, or from the row's configure control) edits the key, endpoint, `gl`/`cr` and default result count; saved values apply to the next search without a restart
 - 🔁 **Hot Configuration** — every search re-reads the row config (including `volatile()`-wrapped values from `ctx.settings.describe()`), so credentials and options changed elsewhere are picked up immediately
@@ -45,30 +45,48 @@ pnpm run build
 
 ### Configure
 
-**Installing as a bundle (recommended) needs no manual configuration.** The
-package's own `cordis.patch.yml` is applied with the bundle and claims the web
-seam's search provider for `serper`:
+**It works right after install — no manual configuration, no restart.** The
+package's own `cordis.patch.yml` only inserts the plugin row:
 
 ```yaml
-- id: web
-  name: '@deepseek-ai/dsh-web'
-  config:
-    searchProvider: serper     # overrides dsh-base's deepseek-official
-    fetchProvider: http        # must be restated: a patch replaces the whole config
 - insert:
     - id: web-search-serper
       name: '@dingpenghui/dsh-web-search-serper'
 ```
 
-> **Why the takeover is required.** `dsh-base` pins `web.searchProvider` to
-> `deepseek-official`, and the seam's selection rule is "a configured id is the
-> only candidate — never a fallback on failure". Inserting the row without the
-> takeover leaves the plugin registered but **never invoked, and silently so**.
-> Your profile's own `cordis.patch.yml` is applied after the bundle layer and
-> wins, so overriding `- id: web` there switches to another backend.
+The takeover happens **at runtime, inside the plugin**: right after registering
+the `serper` provider, `apply()` sets `ctx.web.config.searchProvider` to
+`serper`. The web seam resolves the selection on every `search()` call and
+caches nothing, so the plugin is addressable the moment it is loaded.
 
-If you are not using the bundle mechanism and copy rows into your profile patch
-by hand, copy **both** blocks above — otherwise it will not take effect either.
+> **Why not take over through the patch any more?** Earlier versions wrote
+> `- id: web` in the bundle patch to replace the row's `config`. That path had
+> four structural flaws: (1) a patch replaces the *whole* config, so every
+> dsh-base key must be restated and any new host field is silently dropped;
+> (2) the profile's own `cordis.patch.yml` wins over bundle layers, so one
+> `- id: web` there silently cancels the takeover; (3) `cordis.patch.yml` is
+> read once at process start, so installing while running does nothing; (4) in
+> every one of those cases search quietly kept using the built-in backend with
+> no error at all. Runtime takeover removes all four.
+
+#### Switching back to the built-in search (or another provider)
+
+The plugin respects an explicit choice — use either:
+
+```bash
+# Option 1: environment variable (the seam honours it over config; the plugin stands down)
+export DSH_WEB_SEARCH_PROVIDER=deepseek-official
+```
+
+```yaml
+# Option 2: replace the row in your profile's cordis.patch.yml (a patch replaces
+# the whole config, so every key the row owns must be restated)
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: deepseek-official
+    fetchProvider: http
+```
 
 No `config` is required: the API key is resolved lazily per search in this order:
 

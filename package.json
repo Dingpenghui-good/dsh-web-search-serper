@@ -1,7 +1,7 @@
 {
   "name": "@dingpenghui/dsh-web-search-serper",
-  "version": "1.2.7",
-  "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam (ctx.web) — installs as a bundle, takes over web.searchProvider, and falls back to another usable provider when Serper is unavailable; key via config / env / credential store",
+  "version": "1.2.8",
+  "description": "Serper.dev-backed web search provider for DSH (DeepSeek Harness) web capability seam (ctx.web) — takes over web.searchProvider at runtime so it works right after install with no config edits or restarts, and falls back to another usable provider when Serper is unavailable; key via config / env / credential store",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -30,7 +30,8 @@
     "RELEASE_NOTES_v1.2.4.md",
     "RELEASE_NOTES_v1.2.5.md",
     "RELEASE_NOTES_v1.2.6.md",
-    "RELEASE_NOTES_v1.2.7.md"
+    "RELEASE_NOTES_v1.2.7.md",
+    "RELEASE_NOTES_v1.2.8.md"
   ],
   "dsh": {
     "bundle": {

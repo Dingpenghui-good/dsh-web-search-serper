@@ -1,8 +1,10 @@
 /**
  * DSH Web Search Serper — Serper.dev 搜索提供方，挂载到 DSH 的 web 能力 seam（ctx.web）。
  *
- * 注册 `serper` 搜索提供方；当 `web` 服务的 `searchProvider` 设为 `serper` 时，
- * `ctx.web.search()` 自动解析到它。
+ * 注册 `serper` 搜索提供方，并在注册后**自动把 seam 的 `searchProvider` 接管为
+ * `serper`**——因此插件装好即生效，不需要任何 `cordis.patch.yml` 书写，也不需要
+ * 重启（seam 每次 search 时解析选择）。部署方若用环境变量
+ * `$DSH_WEB_SEARCH_PROVIDER` 显式指定了别的 provider，插件让位。
  *
  * API key 解析顺序（每次搜索时惰性解析，凭证库改动无需重启）：
  * 1. 插件 config 的 `apiKey` 字段（显式优先）；
@@ -91,6 +93,19 @@ interface CredentialsReadFace {
 /** web seam 上暴露的搜索注册表（provider 降级时读取）。 */
 interface WebRegistryFace {
   searchProviders?: Map<string, WebSearchProvider>
+}
+
+/**
+ * web seam 的搜索选择面（接管搜索用）。
+ *
+ * `config.searchProvider` 是 cosmokit 的 volatile 包装：`get()` 读当前值，
+ * `set()` 写入即让后续每次 `search()` 走新 id（seam 在调用时解析，不缓存），
+ * 因此接管**不必重启**。环境变量 `$DSH_WEB_SEARCH_PROVIDER` 与该字段同权，
+ * 且在 seam 侧优先于 config，所以本插件在环境变量显式指向别的 provider 时
+ * 让位——那是部署方的显式意志，插件不该覆盖。
+ */
+interface WebSelectionFace {
+  config?: { searchProvider?: { get?(): string | undefined; set?(id: string): void } }
 }
 
 /** `ctx.logger` 的最小面向：宿主未提供时全部可选，缺失即不记录。 */
@@ -244,22 +259,72 @@ export function apply(ctx: Context): void {
   logger?.debug?.(
     `web-search-serper: registered search provider "serper" (key source: ${resolveKeySource()})`,
   )
+
+  // 装好即生效：把 seam 的选择指到本 provider。这一步之前由 bundle patch 里
+  // 的 `- id: web` 整行替换承担，但 patch 层会被 profile 自己的 `- id: web`
+  // 覆盖、也会漏过配置在进程启动后才写入的情形，导致「装了却没被调用、且不
+  // 报错」。改为运行时接管后，插件自己保证被寻址，不再依赖任何配置书写。
+  const taken = takeOverSearch()
+
   const declared = declaredSearchProvider()
-  if (declared !== undefined && declared !== SERPER_PROVIDER_ID) {
-    // 插件已注册，但 web seam 指向别的 provider：本插件不会被调用。
+  if (taken === 'already') {
+    logger?.debug?.(`web-search-serper: web.searchProvider already selects "${SERPER_PROVIDER_ID}"`)
+  } else if (taken === 'declined') {
+    // 部署方用环境变量显式指定了别的 provider：让位，但把话说清楚。
     logger?.warn?.(
-      `web-search-serper: web.searchProvider is "${declared}", not "${SERPER_PROVIDER_ID}" — `
-      + 'this plugin is loaded but will not be used until the web row selects it',
+      `web-search-serper: $DSH_WEB_SEARCH_PROVIDER is "${declared}", not "${SERPER_PROVIDER_ID}" — `
+      + 'respecting it; this plugin is registered but will not be used',
     )
-  } else if (declared === undefined) {
-    logger?.warn?.(
-      'web-search-serper: the web row does not declare searchProvider — '
-      + 'this plugin is registered but the seam will not route searches to it',
-    )
+  } else if (taken === 'failed') {
+    // 接管面不可写（旧宿主 / seam 形态不同）：退回「检查配置」的旧路径。
+    if (declared !== undefined && declared !== SERPER_PROVIDER_ID) {
+      logger?.warn?.(
+        `web-search-serper: web.searchProvider is "${declared}", not "${SERPER_PROVIDER_ID}" — `
+        + 'this plugin is loaded but will not be used until the web row selects it',
+      )
+    } else if (declared === undefined) {
+      logger?.warn?.(
+        'web-search-serper: the web row does not declare searchProvider — '
+        + 'this plugin is registered but the seam will not route searches to it',
+      )
+    }
+  } else {
+    logger?.debug?.(`web-search-serper: took over web.searchProvider (was "${declared ?? 'unset'}")`)
   }
 
-  /** 读取 dsh-base 的 web 行声明的 searchProvider（用于判断是否真的被选中）。 */
+  /**
+   * 把 web seam 的 `searchProvider` 指向本 provider，使插件「装好即生效」。
+   *
+   * 只在两种情况让位：环境变量 `$DSH_WEB_SEARCH_PROVIDER` 非空（部署方的显式
+   * 选择，且 seam 侧优先于 config），或 seam 已指向 serper（无需改动）。
+   *
+   * 接管是 `set()` 一次即可：seam 在每次 search 时解析选择，不缓存结果，
+   * 因此不必重启宿主，也不会在 profile 热重载后失效。
+   * @returns 接管结果，供日志区分「本来就对」「让位」「失败」「刚改好」。
+   */
+  function takeOverSearch(): 'already' | 'declined' | 'failed' | 'adopted' {
+    const fromEnv = process.env.DSH_WEB_SEARCH_PROVIDER
+    if (typeof fromEnv === 'string' && fromEnv.length > 0 && fromEnv !== SERPER_PROVIDER_ID) {
+      return 'declined'
+    }
+    const selection = (ctx.get('web') as WebSelectionFace | undefined)?.config?.searchProvider
+    if (selection === undefined || typeof selection.set !== 'function') return 'failed'
+    try {
+      if (selection.get?.() === SERPER_PROVIDER_ID) return 'already'
+      selection.set(SERPER_PROVIDER_ID)
+      return selection.get?.() === SERPER_PROVIDER_ID ? 'adopted' : 'failed'
+    } catch {
+      // 旧宿主或只读 config：不让接管失败拖垮插件注册本身。
+      return 'failed'
+    }
+  }
+
+  /** 读取 dsh-base 的 web 行声明的 searchProvider（用于判断是否真的被选中）。
+   *  环境变量 `$DSH_WEB_SEARCH_PROVIDER` 与 config 同权且 seam 侧优先，因此
+   *  非空时视为「部署方显式声明」，返回它而不是 config 值。 */
   function declaredSearchProvider(): string | undefined {
+    const fromEnv = process.env.DSH_WEB_SEARCH_PROVIDER
+    if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv
     const settings = ctx.get('settings') as SettingsReadFace | undefined
     if (settings === undefined) return undefined
     try {

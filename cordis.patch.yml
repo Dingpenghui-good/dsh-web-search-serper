@@ -1,27 +1,36 @@
 # @dingpenghui/dsh-web-search-serper bundle patch — 安装后经 profile 加载自动生效。
 #
-# 本 patch 做两件事：
-#   1. 把 web seam 的 search provider 接管为 `serper`。dsh-base 默认把
-#      `web.searchProvider` 写死为 `deepseek-official`，而 seam 的选择语义是
-#      「配了 id 就只用它、失败也不换人」——不接管的话，本插件即使注册成功
-#      也永远不会被调用，且不报任何错。
-#   2. 插入插件自身的行（id = `web-search-serper`，同时也是 settings 命名空间）。
+# 本 patch 只做一件事：插入插件自身的行（id = `web-search-serper`，同时也是
+# settings 命名空间）。
 #
-# ⚠️ DSH 的 patch 语义是「整行替换 config」：`- id: web` 会替换 dsh-base
-#    中 web 行的整个 config，因此下方必须重述该行拥有的每一个 key
-#    （`@deepseek-ai/dsh-web` 0.1.7 的 config 字段为 searchProvider /
-#    fetchProvider）。profile 自己的 cordis.patch.yml 在 bundle 层之后应用、
-#    优先级更高，部署方若想换回其它搜索后端，在自己的 patch 里覆盖
-#    `- id: web` 即可。
+# ⚠️ 这里**故意不再写 `- id: web`**。
 #
-# 行 id 即配置命名空间：`web-search-serper`。config 全部可选，缺省时 API key
-# 按以下顺序解析：
+# 早期版本靠「整行替换 web 行、把 searchProvider 改成 serper」来接管搜索，但这条路
+# 有先天缺陷：
+#
+#   1. DSH 的 patch 语义是「整行替换 config」，`- id: web` 会抹掉 dsh-base 里
+#      web 行的全部配置，必须逐字重述每一个 key，宿主一加字段就漏；
+#   2. profile 自己的 `cordis.patch.yml` 优先级更高，写一句 `- id: web` 就能
+#      静默把接管顶掉；
+#   3. `cordis.patch.yml` 只在进程启动时读取一次，插件装好后不重启就不生效；
+#   4. 上述任一情况发生时，搜索会**安静地继续走内置后端**，不报任何错。
+#
+# 现在接管改在插件运行时完成（见 `src/index.ts` 的 `takeOverSearch`）：`apply()`
+# 注册完 provider 后，直接把 `ctx.web.config.searchProvider` 设为 `serper`。seam
+# 在每次 search 时解析选择、不缓存，因此**装好即生效、无需改配置、无需重启**。
+#
+# 让位规则（不覆盖你自己的显式选择）：
+#   - 环境变量 `$DSH_WEB_SEARCH_PROVIDER` 非空且不是 `serper` 时，插件尊重它；
+#   - 想换回 DeepSeek 内置搜索：设 `DSH_WEB_SEARCH_PROVIDER=deepseek-official`，
+#     或在 profile 的 `cordis.patch.yml` 里加 `- id: web` 并写
+#     `config: { searchProvider: deepseek-official, fetchProvider: http }`。
+#
+# API key 按以下顺序解析（每次搜索时惰性解析，凭证库改动无需重启）：
 #   1. config.apiKey（显式配置）
 #   2. 宿主进程环境变量 $SERPER_API_KEY
 #   3. 凭证库引用 SERPER_API_KEY（credentials 服务，热解析）
 #
-# 追加选项（gl / cr / numResults / baseURL）时，在自己的 patch 层里给该行补
-# config 块即可，例如：
+# 追加选项（gl / cr / numResults / baseURL）时，给自己的 patch 层补 config 块即可：
 #
 #   - id: web-search-serper
 #     name: '@dingpenghui/dsh-web-search-serper'
@@ -32,14 +41,6 @@
 # 网络异常、端点配置错误等）时**自动降级**到 seam 上其它已注册且可用的
 # 搜索 provider（通常是 dsh-base 自带的 deepseek-official）；两者都不可用
 # 时才向上抛错。
-
-- id: web
-  name: '@deepseek-ai/dsh-web'
-  config:
-    # 接管搜索：从 dsh-base 的 deepseek-official 切换到本插件。
-    searchProvider: serper
-    # 必须重述：上面一条整行替换 config，漏掉它等于抹掉 dsh-base 的 fetch 配置。
-    fetchProvider: http
 
 - insert:
     - id: web-search-serper

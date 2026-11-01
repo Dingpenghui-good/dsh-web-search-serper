@@ -18,7 +18,7 @@ Serper.dev 是 Google 搜索的官方合作伙伴，提供高速、结构化的 
 - 🔒 **隐私友好** — 不追踪用户，无 Cookie 收集
 - 💰 **免费额度高** — 每月 2,500 次查询，免费使用
 - 🌍 **多语言支持** — 支持全球多个国家/地区的搜索结果
-- 🔧 **开箱接管** — 作为 bundle 安装后自动接管 `web.searchProvider`；key 每次搜索惰性解析（config → 环境变量 → 凭证库），改动无需重启
+- 🔧 **装好即生效** — 安装后由插件自己在运行时接管 `web.searchProvider`，**无需改任何配置、无需重启**；key 每次搜索惰性解析（config → 环境变量 → 凭证库），改动同样无需重启
 - 🛟 **失败自动降级** — Serper 不可用时自动回退到其它可用搜索提供方，不会让 `web_search` 整体失效
 - ⚙️ **插件页内的设置界面** — 在「插件」列表点插件名（或行上的「配置」）即可编辑 Key、端点、`gl` / `cr` 与默认结果数量；保存后对下一次搜索即时生效，无需重启
 - 🔁 **配置热读取** — 每次搜索都重读行 config（含 `ctx.settings.describe()` 中以 `volatile()` 包装返回的值），所以在别处改动凭证或选项同样立即生效
@@ -45,28 +45,44 @@ pnpm run build
 
 ### 配置
 
-**作为 bundle 安装时（推荐）无需任何手动配置。** 本包自带的 `cordis.patch.yml`
-会随 bundle 一起生效，把 web seam 的搜索提供方接管为 `serper`：
+**装好即生效，无需任何手动配置，也无需重启。** 插件自带的 `cordis.patch.yml`
+只负责插入插件行：
 
 ```yaml
-- id: web
-  name: '@deepseek-ai/dsh-web'
-  config:
-    searchProvider: serper     # 覆盖 dsh-base 默认的 deepseek-official
-    fetchProvider: http        # 必须重述：patch 会整行替换 config
 - insert:
     - id: web-search-serper
       name: '@dingpenghui/dsh-web-search-serper'
 ```
 
-> **为什么必须接管？** `dsh-base` 把 `web.searchProvider` 固定为
-> `deepseek-official`，而 web seam 的选择语义是「配了 id 就只用它、失败也不
-> 换人」。只 `insert` 而不管接管的话，本插件即使注册成功也永远不会被调用，
-> 而且**不报任何错**。profile 自己的 `cordis.patch.yml` 在 bundle 层之后应用、
-> 优先级更高，想换回其它搜索后端时在自己的 patch 里覆盖 `- id: web` 即可。
+接管搜索由**插件运行时**自己完成：`apply()` 注册完 `serper` provider 后，直接把
+`ctx.web.config.searchProvider` 设为 `serper`。web seam 在每次 `search()` 时解析
+选择、不缓存结果，所以插件一被加载就立刻被寻址。
 
-若你不走 bundle 机制、而是手动把行复制进 profile patch，请把上面**两段一起**
-复制过去，否则同样不会生效。
+> **为什么不再靠 patch 接管？** 早期版本在 bundle patch 里写
+> `- id: web` 整行替换 `config` 来接管。这条路有四个坑：① 整行替换会抹掉
+> dsh-base 的其它 key，宿主每加字段就漏；② profile 自己的 `cordis.patch.yml`
+> 优先级更高，一句 `- id: web` 就能把接管静默顶掉；③ `cordis.patch.yml` 只在
+> 进程启动时读取一次，装完不重启就不生效；④ 上述任一情况发生时，搜索会
+> **安静地继续走内置后端、不报任何错**。改为运行时接管后，这些坑全部消失。
+
+#### 换回内置搜索（或别的 provider）
+
+插件会尊重你的显式选择，两种方式任选：
+
+```bash
+# 方式一：环境变量（seam 侧优先于 config，插件会主动让位）
+export DSH_WEB_SEARCH_PROVIDER=deepseek-official
+```
+
+```yaml
+# 方式二：在 profile 的 cordis.patch.yml 里整行覆盖（patch 语义是替换 config，
+# 必须重述该行拥有的每一个 key）
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: deepseek-official
+    fetchProvider: http
+```
 
 API key 无需配置即可工作，每次搜索时按以下顺序惰性解析：
 
@@ -95,7 +111,7 @@ API key 无需配置即可工作，每次搜索时按以下顺序惰性解析：
 - **两侧都失败** — 上抛 `WEB_PROVIDER_ERROR`，消息同时包含主后端与降级后端的
   失败原因，降级错误挂在 `cause` 链上。
 
-> **重启须知** — DSH 的 `patchReload: live` 会热重载配置层（`cordis.patch.yml`），但插件代码（`lib/index.js`）是 ESM 模块，进程内缓存不会自动刷新。所以即使配置（如接管）立即生效，插件内部逻辑（如降级）需要**重启宿主**后才能生效。
+> **重启须知** — DSH 的 `patchReload: live` 会热重载配置层（`cordis.patch.yml`），但插件**代码本身**（`lib/index.js`）是 ESM 模块，进程内缓存不会自动刷新。也就是说：**升级插件版本、或改动插件源码后需要重启宿主**；而首次安装后是否生效取决于插件行是否已被加载（见下方排障）。插件一旦加载，其内部逻辑与运行时接管无需再次重启。
 
 降级在**插件内部**完成，因为 DSH 的 web seam 自身不做回退（配置了 id 就只用它）。
 相应地，`available()` 在「Serper 侧不可用、但存在可降级目标」时仍返回 `true` ——
@@ -124,27 +140,33 @@ Host 实际在 serve 的 settings 命名空间：命名空间被 serve 时才出
 这是本插件最容易踩的坑，坑不在插件本身，而在 DSH 的配置加载时机。
 
 **`profile` 的 `cordis.patch.yml` 只在 DSH 进程启动时读取一次。**
-如果在 DSH 已经运行时才安装插件、或才把 `web.searchProvider` 改成 `serper`，
-当前进程**不会**重新加载插件层——插件处于「装好了、也配置了，但没生效」的状态，
-而搜索会安静地继续走 DSH 内置后端，**不会报任何错**。
+如果在 DSH 已经运行时才安装插件，当前进程**不会**重新加载插件层——插件处于
+「装好了但没加载」的状态，而搜索会安静地继续走 DSH 内置后端，**不会报任何错**。
+
+> v1.2.8 起，只要插件层被加载，接管搜索就由插件自己在运行时完成，**不再依赖
+> `cordis.patch.yml` 里怎么写**。因此剩下的唯一前置条件就是「插件行被加载」。
 
 判断顺序（v1.2.7 起每步都有日志可查）：
 
-1. **改动后必须重启 DSH**。这是最常见的原因。
+1. **安装插件后重启 DSH**。这是最常见的原因。
 2. 看宿主日志里有没有这一行（说明插件层确实加载了）：
    ```
    web-search-serper: registered search provider "serper" (key source: credential)
    ```
    没有这行 → 插件层没加载，回到第 1 步。
-3. 若出现下面两种警告，说明插件加载了但**不会被调用**：
+3. v1.2.8 起紧接着应出现（debug 级）：
    ```
+   web-search-serper: took over web.searchProvider (was "deepseek-official")
+   ```
+   若改为出现下面任一条警告，才说明「加载了但不会被调用」：
+   ```
+   web-search-serper: $DSH_WEB_SEARCH_PROVIDER is "xxx", not "serper" — respecting it
+
    web-search-serper: web.searchProvider is "deepseek-official", not "serper" —
    this plugin is loaded but will not be used until the web row selects it
-
-   web-search-serper: the web row does not declare searchProvider —
-   this plugin is registered but the seam will not route searches to it
    ```
-   前者是 `web` 行没接管（见上文「接管搜索」），后者是配置里没有这一项。
+   第一条是你自己用环境变量显式指定了别的 provider；第二条只会在**旧宿主**
+   没有可写的 `searchProvider` 配置面时出现（此时仍需 `- id: web` 覆盖）。
 4. 若出现降级警告，说明 Serper 侧失败了、结果是别的后端给的：
    ```
    web-search-serper: fell back to "deepseek-official" — serper failed: <原因>
@@ -161,8 +183,8 @@ Host 实际在 serve 的 settings 命名空间：命名空间被 serve 时才出
    该快照**不含 key 值**，只有 `keySource`（`config` / `env` / `credential` / `missing`），
    用于区分「我以为配了 key，其实读到的是另一个来源」。
 
-> 一句话版本：**安装或改配置之后，重启 DSH；然后用日志里的
-> `registered search provider` 那一行确认它真的活了。**
+> 一句话版本：**装完/升级后重启一次 DSH，用日志里的 `registered search provider`
+> 确认它活了；之后一切自动生效，不用再碰配置。**
 
 ### 兼容性
 
